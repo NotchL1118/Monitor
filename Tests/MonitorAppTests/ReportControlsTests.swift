@@ -24,6 +24,7 @@ final class ReportControlsTests: XCTestCase {
 
     @MainActor
     func testRankingScrollStaysInsideCardAtBothEdges() async throws {
+        try TestEnvironment.requireWindowRendering()
         _ = NSApplication.shared
         let rows = VStack { ForEach(0..<30) { i in Text("应用 \(i)").frame(height: 32) } }
         let card = RankingCardSurface(rows: rows)

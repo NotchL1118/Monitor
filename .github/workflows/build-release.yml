@@ -52,6 +52,10 @@ jobs:
 
       - name: Run Swift and extension tests
         run: ./scripts/test.sh
+        env:
+          # Hosted runners lack reliable Metal rendering. Keep all non-UI tests,
+          # including the local HTTP bridge and persistence integration test.
+          MONITOR_SKIP_UI_TESTS: '1'
 
       - name: Build, sign and package app
         run: ./scripts/package-release.sh

@@ -29,6 +29,7 @@ final class StatusDashboardTests: XCTestCase {
 
     @MainActor
     func testClickTogglesPopoverAndSecondaryClicksOpenNativeMenu() async throws {
+        try TestEnvironment.requireWindowRendering()
         _ = NSApplication.shared
         let model = MonitorModel(dataDirectory: FileManager.default.temporaryDirectory)
         let controller = StatusController(model: model) { _ in }

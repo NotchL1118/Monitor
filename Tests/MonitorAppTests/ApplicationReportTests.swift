@@ -66,6 +66,7 @@ final class ApplicationReportTests: XCTestCase {
 
     @MainActor
     func testDetailRenderingAtBothWindowWidths() async throws {
+        try TestEnvironment.requireWindowRendering()
         _ = NSApplication.shared
         let sessions = [session(1, date(4, 9, 12), date(4, 9, 30)),
                         session(2, date(4, 10, 8), date(4, 10, 40)),

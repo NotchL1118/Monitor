@@ -112,7 +112,9 @@ struct UsageShareRing: View {
     }
 
     private func point(_ angle: Double, _ distance: CGFloat) -> CGPoint {
-        CGPoint(x: radius + distance * sin(angle), y: radius - distance * cos(angle))
+        let sine: Double = sin(angle)
+        let cosine: Double = cos(angle)
+        return CGPoint(x: radius + distance * CGFloat(sine), y: radius - distance * CGFloat(cosine))
     }
 
     private func share(at point: CGPoint) -> UsageShare? {
