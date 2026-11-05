@@ -21,6 +21,8 @@ public final class ActivityStore {
         do {
             sqlite3_busy_timeout(db, 2000)
             try execute("PRAGMA journal_mode=WAL;")
+            // Truncate the WAL back to 1 MB after each checkpoint instead of leaving it at its high-water mark.
+            try execute("PRAGMA journal_size_limit=1048576;")
             try execute("CREATE TABLE IF NOT EXISTS activities (id INTEGER PRIMARY KEY, kind TEXT NOT NULL CHECK(kind IN ('application','website')), activity_key TEXT NOT NULL, name TEXT NOT NULL, started REAL NOT NULL, ended REAL NOT NULL CHECK(ended >= started));")
             // Add nullable columns in one transaction; domain-only history stays intact.
             let columns = try prepare("PRAGMA table_info(activities);")
@@ -166,9 +168,44 @@ public final class ActivityStore {
         return rows
     }
 
+    /// Start of the oldest stored slice, or nil when the store is empty.
+    public func earliestActivityStart() throws -> Date? {
+        let statement = try prepare("SELECT MIN(started) FROM activities;")
+        defer { sqlite3_finalize(statement) }
+        guard sqlite3_step(statement) == SQLITE_ROW else { throw fail() }
+        if sqlite3_column_type(statement, 0) == SQLITE_NULL { return nil }
+        return Date(timeIntervalSince1970: sqlite3_column_double(statement, 0))
+    }
+
+    /// Number of slices that `deleteActivities(endedBefore:)` would remove.
+    public func activityCount(endedBefore cutoff: Date) throws -> Int {
+        let statement = try prepare("SELECT COUNT(*) FROM activities WHERE ended <= ?;")
+        defer { sqlite3_finalize(statement) }
+        sqlite3_bind_double(statement, 1, cutoff.timeIntervalSince1970)
+        guard sqlite3_step(statement) == SQLITE_ROW else { throw fail() }
+        return Int(sqlite3_column_int64(statement, 0))
+    }
+
+    /// Removes slices that ended at or before `cutoff` and compacts the file.
+    /// Slices that cross the cutoff stay whole, so no raw slice is ever rewritten.
+    @discardableResult
+    public func deleteActivities(endedBefore cutoff: Date) throws -> Int {
+        let statement = try prepare("DELETE FROM activities WHERE ended <= ?;")
+        defer { sqlite3_finalize(statement) }
+        sqlite3_bind_double(statement, 1, cutoff.timeIntervalSince1970)
+        guard sqlite3_step(statement) == SQLITE_DONE else { throw fail() }
+        let deleted = Int(sqlite3_changes(db))
+        if deleted > 0 {
+            try execute("VACUUM;")
+            try execute("PRAGMA wal_checkpoint(TRUNCATE);")
+        }
+        return deleted
+    }
+
     public func deleteAll() throws {
         try execute("PRAGMA secure_delete=ON;")
         try execute("DELETE FROM activities;")
+        try execute("VACUUM;")
         try execute("PRAGMA wal_checkpoint(TRUNCATE);")
     }
 }

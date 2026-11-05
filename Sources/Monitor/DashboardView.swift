@@ -13,6 +13,7 @@ enum Palette {
 struct DashboardView: View {
     @EnvironmentObject private var model: MonitorModel
     @State private var confirmDelete = false
+    @State private var pendingRetention: (retention: DataRetention, cutoff: Date, count: Int)?
     @State private var shareHighlight: [ActivityKind: String] = [:]
 
     var body: some View {
@@ -25,7 +26,7 @@ struct DashboardView: View {
                         case .overview: overview
                         case .applications: applicationAnalysis
                         case .dayTimeline: DayTimelineView()
-                        case .connection: connection
+                        case .connection: connection.onAppear { model.refreshStorageUsage() }
                         }
                         if let error = model.storageError { message(error, symbol: "exclamationmark.triangle", color: .red) }
                         if let error = model.serverError { message(error, symbol: "exclamationmark.triangle", color: Palette.orange) }
@@ -44,6 +45,17 @@ struct DashboardView: View {
             Button("取消", role: .cancel) {}
             Button("清空记录", role: .destructive) { model.deleteHistory() }
         } message: { Text("这会删除本机保存的所有日期记录，无法撤销。配对设置会保留。") }
+        .alert("删除较早的记录？", isPresented: Binding(get: { pendingRetention != nil }, set: { if !$0 { pendingRetention = nil } })) {
+            Button("取消", role: .cancel) { pendingRetention = nil }
+            Button("删除并保存设置", role: .destructive) {
+                if let pending = pendingRetention { model.setDataRetention(pending.retention) }
+                pendingRetention = nil
+            }
+        } message: {
+            if let pending = pendingRetention {
+                Text("改为「\(pending.retention.label)」后，会立即删除 \(pending.cutoff.formatted(model.reportTimeZone.formatStyle.year().month().day())) 之前结束的 \(pending.count) 条记录，无法撤销。")
+            }
+        }
         .alert("Monitor", isPresented: Binding(get: { model.notice != nil }, set: { if !$0 { model.notice = nil } })) {
             Button("知道了") { model.notice = nil }
         } message: { Text(model.notice ?? "") }
@@ -364,15 +376,107 @@ struct DashboardView: View {
                     .font(.system(size: 12)).foregroundStyle(Palette.muted).lineSpacing(5)
                 Text("Chrome 扩展仅记录前台普通窗口；后台标签页、无痕窗口、浏览器设置页不计入网站时长。应用统计仍会包含这些窗口中的 Chrome 前台时间。")
                     .font(.system(size: 12)).foregroundStyle(Palette.muted).lineSpacing(5)
-                Text(model.dataDirectory.path).font(.system(size: 10, design: .monospaced)).textSelection(.enabled)
-                HStack {
-                    Button("打开数据文件夹") { NSWorkspace.shared.open(model.dataDirectory) }.buttonStyle(.bordered)
-                    Spacer()
-                    Button("清空所有历史记录", role: .destructive) { confirmDelete = true }.buttonStyle(.bordered)
-                }
-            }.padding(26).background(.white, in: RoundedRectangle(cornerRadius: 14))
+            }.padding(26).frame(maxWidth: .infinity, alignment: .leading).background(.white, in: RoundedRectangle(cornerRadius: 14))
+            storageCard
             message("关闭窗口后仍会在菜单栏记录。退出 Monitor 会停止应用和网站统计；再次打开后自动恢复。", symbol: "info.circle", color: Palette.muted)
         }
+    }
+
+    private var storageCard: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            Label("存储与保留", systemImage: "internaldrive").font(.system(size: 17, weight: .semibold))
+            HStack(alignment: .top, spacing: 12) {
+                storageTile("占用空间", symbol: "externaldrive", footnote: sizeFootnote) {
+                    Text(model.storageUsage?.sizeText ?? "—")
+                }
+                storageTile("已记录", symbol: "calendar", footnote: earliestFootnote) {
+                    Text(recordedDays.map { "\($0) 天" } ?? "—")
+                }
+                storageTile("保留期限", symbol: "clock.arrow.circlepath", footnote: retentionFootnote) {
+                    Menu {
+                        Picker("保留期限", selection: retentionBinding) {
+                            ForEach(DataRetention.allCases, id: \.self) { retention in Text(retention.label).tag(retention) }
+                        }.pickerStyle(.inline).labelsHidden()
+                    } label: {
+                        HStack(spacing: 6) {
+                            Text(model.dataRetention.shortLabel)
+                            Image(systemName: "chevron.up.chevron.down").font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(Palette.green)
+                        }.contentShape(Rectangle())
+                    }.menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
+                }
+            }
+            HStack(spacing: 10) {
+                Image(systemName: "folder").foregroundStyle(Palette.muted)
+                Text(model.dataDirectory.path).font(.system(size: 11, design: .monospaced))
+                    .lineLimit(1).truncationMode(.middle).textSelection(.enabled)
+                Spacer(minLength: 12)
+                Button("在 Finder 中打开") { NSWorkspace.shared.open(model.dataDirectory) }.buttonStyle(.bordered).controlSize(.small)
+            }.padding(.horizontal, 14).padding(.vertical, 10)
+                .background(Palette.background, in: RoundedRectangle(cornerRadius: 10))
+            Divider()
+            HStack(alignment: .center) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("清空所有历史记录").font(.system(size: 13, weight: .medium))
+                    Text("删除本机保存的全部使用记录，配对设置会保留。").font(.system(size: 11)).foregroundStyle(Palette.muted)
+                }
+                Spacer()
+                Button("清空…", role: .destructive) { confirmDelete = true }.buttonStyle(.bordered)
+            }
+        }.padding(26).background(.white, in: RoundedRectangle(cornerRadius: 14))
+    }
+
+    private func storageTile<Value: View>(_ title: String, symbol: String, footnote: String,
+                                          @ViewBuilder value: () -> Value) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text(title).font(.system(size: 12)).foregroundStyle(Palette.muted)
+                Spacer()
+                Image(systemName: symbol).font(.system(size: 12)).foregroundStyle(Palette.green)
+            }
+            value().font(.system(size: 22, weight: .semibold, design: .rounded)).monospacedDigit()
+                .lineLimit(1).minimumScaleFactor(0.7)
+            Text(footnote).font(.system(size: 10)).foregroundStyle(Palette.muted).lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+        }.padding(16).frame(maxWidth: .infinity, minHeight: 112, alignment: .topLeading)
+            .background(Palette.green.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    private var retentionBinding: Binding<DataRetention> {
+        Binding(get: { model.dataRetention }, set: { retention in
+            if let pending = model.pendingDeletion(for: retention) {
+                pendingRetention = (retention, pending.cutoff, pending.count)
+            } else { model.setDataRetention(retention) }
+        })
+    }
+
+    private var recordedDays: Int? {
+        guard let usage = model.storageUsage else { return nil }
+        guard let earliest = usage.earliest else { return 0 }
+        let calendar = model.reportCalendar
+        let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: earliest),
+                                           to: calendar.startOfDay(for: Date())).day ?? 0
+        return max(0, days) + 1
+    }
+
+    private var sizeFootnote: String {
+        guard let usage = model.storageUsage else { return "数据库与日志文件" }
+        // Projection needs a week of history to be meaningful.
+        guard let days = recordedDays, days >= 7 else { return "数据库与日志文件" }
+        let yearly = Int64(Double(usage.bytes) / Double(days) * 365)
+        return "按目前速度，一年约 \(ByteCountFormatter.string(fromByteCount: yearly, countStyle: .file))"
+    }
+
+    private var earliestFootnote: String {
+        guard let earliest = model.storageUsage?.earliest else { return "暂无记录" }
+        return "最早 \(earliest.formatted(model.reportTimeZone.formatStyle.year().month().day()))"
+    }
+
+    private var retentionFootnote: String {
+        guard let cutoff = model.dataRetention.cutoff(now: Date(), calendar: model.reportCalendar) else {
+            return "不会自动删除记录"
+        }
+        return "每天自动清理 \(cutoff.formatted(model.reportTimeZone.formatStyle.year().month().day())) 之前的记录"
     }
 
     private func step(_ number: Int, title: String, detail: String) -> some View {

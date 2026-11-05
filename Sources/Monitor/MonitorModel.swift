@@ -22,6 +22,8 @@ final class MonitorModel: ObservableObject {
             selectedDate = wasCurrent ? now : min(reportCalendar.date(from: day) ?? selectedDate, now)
         }
     }
+    @Published private(set) var dataRetention: DataRetention
+    @Published private(set) var storageUsage: StorageUsage?
     @Published var applications: [UsageSummary] = []
     @Published var websites: [UsageSummary] = []
     @Published private(set) var dailyActivities: [ActivitySlice] = []
@@ -52,6 +54,9 @@ final class MonitorModel: ObservableObject {
     private var suspensionReasons: Set<String> = []
     private var started = false
     private let preferences: UserDefaults
+    /// Start of the report-calendar day on which retention last ran; cleanup runs at most once a day.
+    private var lastRetentionDay: Date?
+    private var databaseURL: URL { dataDirectory.appendingPathComponent("activity.sqlite") }
 
     var recording: Bool { !paused && !screenUnavailable && storageError == nil && store != nil }
     var appSeconds: Double { applications.reduce(0) { $0 + $1.seconds } }
@@ -75,6 +80,7 @@ final class MonitorModel: ObservableObject {
     init(dataDirectory: URL? = nil, preferences: UserDefaults = .standard) {
         self.preferences = preferences
         reportTimeZone = preferences.string(forKey: ReportTimeZone.preferenceKey).flatMap(ReportTimeZone.init(rawValue:)) ?? .system
+        dataRetention = preferences.string(forKey: DataRetention.preferenceKey).flatMap(DataRetention.init(rawValue:)) ?? .forever
         self.dataDirectory = dataDirectory ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Monitor", isDirectory: true)
         mascot.bind(to: self)
@@ -83,23 +89,7 @@ final class MonitorModel: ObservableObject {
     func start() {
         guard !started else { return }
         started = true
-        do {
-            try FileManager.default.createDirectory(at: dataDirectory, withIntermediateDirectories: true,
-                attributes: [.posixPermissions: 0o700])
-            try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: dataDirectory.path)
-            let tokenURL = dataDirectory.appendingPathComponent("pairing-token")
-            if FileManager.default.fileExists(atPath: tokenURL.path) {
-                pairingToken = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
-                guard pairingToken.count == 64, pairingToken.utf8.allSatisfy({ (48...57).contains($0) || (97...102).contains($0) }) else {
-                    throw StoreError(message: "本地配对码文件损坏，请移走 pairing-token 文件后重新启动。使用记录不会受影响。")
-                }
-            } else {
-                pairingToken = (UUID().uuidString + UUID().uuidString).replacingOccurrences(of: "-", with: "").lowercased()
-                try pairingToken.write(to: tokenURL, atomically: true, encoding: .utf8)
-            }
-            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: tokenURL.path)
-            store = try ActivityStore(path: dataDirectory.appendingPathComponent("activity.sqlite").path)
-        } catch { storageError = "无法保存使用记录：\(error.localizedDescription)"; return }
+        do { try openStorage() } catch { storageError = "无法保存使用记录：\(error.localizedDescription)"; return }
 
         let server = LocalServer(token: pairingToken)
         server.onUpdate = { [weak self] update in self?.receiveBrowser(update) }
@@ -124,6 +114,7 @@ final class MonitorModel: ObservableObject {
         }
         tracker.setEnabled(recording, at: Date())
         updateFrontmost()
+        applyRetentionIfNeeded(at: Date())
         refresh()
         // Without this, App Nap throttles the background sampling timer and intervals get discarded as gaps.
         napActivity = ProcessInfo.processInfo.beginActivity(options: [.userInitiatedAllowingIdleSystemSleep],
@@ -133,6 +124,25 @@ final class MonitorModel: ObservableObject {
         }
         RunLoop.main.add(timer, forMode: .common)
         self.timer = timer
+    }
+
+    /// Opens the data directory, pairing token and database without starting the server or timers.
+    func openStorage() throws {
+        try FileManager.default.createDirectory(at: dataDirectory, withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700])
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: dataDirectory.path)
+        let tokenURL = dataDirectory.appendingPathComponent("pairing-token")
+        if FileManager.default.fileExists(atPath: tokenURL.path) {
+            pairingToken = try String(contentsOf: tokenURL, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines)
+            guard pairingToken.count == 64, pairingToken.utf8.allSatisfy({ (48...57).contains($0) || (97...102).contains($0) }) else {
+                throw StoreError(message: "本地配对码文件损坏，请移走 pairing-token 文件后重新启动。使用记录不会受影响。")
+            }
+        } else {
+            pairingToken = (UUID().uuidString + UUID().uuidString).replacingOccurrences(of: "-", with: "").lowercased()
+            try pairingToken.write(to: tokenURL, atomically: true, encoding: .utf8)
+        }
+        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: tokenURL.path)
+        store = try ActivityStore(path: databaseURL.path)
     }
 
     private func observe(_ center: NotificationCenter, _ name: Notification.Name,
@@ -164,6 +174,7 @@ final class MonitorModel: ObservableObject {
         persist(until: now)
         updateFrontmost()
         browserConnected = tracker.browserSeen.map { now.timeIntervalSince($0) < ActivityTracker.browserTTL } ?? false
+        applyRetentionIfNeeded(at: now)
         refresh()
     }
 
@@ -241,6 +252,7 @@ final class MonitorModel: ObservableObject {
                 .filter { $0.kind == .application }.sorted { $0.start < $1.start }
             refreshApplicationReport()
             if menuDashboardVisible { today = try TodaySnapshot.read(from: store, at: Date(), calendar: reportCalendar) }
+            if dashboardPage == .connection { refreshStorageUsage() }
         } catch { storageError = error.localizedDescription; tracker.setEnabled(false, at: Date()) }
     }
 
@@ -296,8 +308,52 @@ final class MonitorModel: ObservableObject {
             try store?.deleteAll()
             tracker.reset(at: Date())
             refresh()
+            refreshStorageUsage()
             notice = "历史记录已清空。"
         } catch { notice = "清空失败：\(error.localizedDescription)" }
+    }
+}
+
+extension MonitorModel {
+    /// Records the new policy would delete right away, so the settings page can ask first.
+    func pendingDeletion(for retention: DataRetention, now: Date = Date()) -> (cutoff: Date, count: Int)? {
+        guard let store, let cutoff = retention.cutoff(now: now, calendar: reportCalendar),
+              let count = try? store.activityCount(endedBefore: cutoff), count > 0 else { return nil }
+        return (cutoff, count)
+    }
+
+    func setDataRetention(_ retention: DataRetention) {
+        guard retention != dataRetention else { return }
+        dataRetention = retention
+        preferences.set(retention.rawValue, forKey: DataRetention.preferenceKey)
+        lastRetentionDay = nil
+        do {
+            let deleted = try applyRetention(at: Date())
+            if deleted > 0 { notice = "已删除 \(deleted) 条超出保留期限的记录。" }
+        } catch { notice = "清理旧记录失败：\(error.localizedDescription)" }
+        refresh()
+        refreshStorageUsage()
+    }
+
+    func refreshStorageUsage() {
+        guard let store else { storageUsage = nil; return }
+        let usage = StorageUsage(bytes: StorageUsage.measure(databaseAt: databaseURL),
+                                 earliest: try? store.earliestActivityStart())
+        if usage != storageUsage { storageUsage = usage }
+    }
+
+    /// Runs automatic cleanup once per report-calendar day; a failure is retried the next day.
+    fileprivate func applyRetentionIfNeeded(at now: Date) {
+        let day = reportCalendar.startOfDay(for: now)
+        guard lastRetentionDay != day else { return }
+        _ = try? applyRetention(at: now)
+    }
+
+    @discardableResult
+    fileprivate func applyRetention(at now: Date) throws -> Int {
+        lastRetentionDay = reportCalendar.startOfDay(for: now)
+        guard let store, let cutoff = dataRetention.cutoff(now: now, calendar: reportCalendar) else { return 0 }
+        return try store.deleteActivities(endedBefore: cutoff)
     }
 }
 
