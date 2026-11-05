@@ -19,6 +19,7 @@ final class MascotTests: XCTestCase {
 
     @MainActor
     func testRenderBrandAtRealMenuBarSizes() async throws {
+        try TestEnvironment.requireWindowRendering()
         _ = NSApplication.shared
         let sheet = VStack(alignment: .leading, spacing: 24) {
             HStack(spacing: 24) {

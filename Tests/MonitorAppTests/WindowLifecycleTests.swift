@@ -5,6 +5,7 @@ import XCTest
 final class WindowLifecycleTests: XCTestCase {
     @MainActor
     func testDockFollowsMainWindowAndStatusDashboardSurvivesClosing() async throws {
+        try TestEnvironment.requireWindowRendering()
         let app = NSApplication.shared
         let previousPolicy = app.activationPolicy()
         let suite = "Monitor-Window-QA-\(UUID().uuidString)"

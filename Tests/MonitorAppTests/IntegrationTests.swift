@@ -110,36 +110,16 @@ final class IntegrationTests: XCTestCase {
         model.screenUnavailable = false
         model.currentApp = "Google Chrome"
 
-        let root = DashboardView().environmentObject(model)
-        let host = NSHostingView(rootView: root)
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1120, height: 800),
-            styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
-        window.isReleasedWhenClosed = false
-        window.contentView = host
-        window.orderFront(nil)
-        defer { window.close() }
-        try await Task.sleep(nanoseconds: 300_000_000)
-        host.layoutSubtreeIfNeeded()
-        let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
-        host.cacheDisplay(in: host.bounds, to: bitmap)
-        let png = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
-        XCTAssertGreaterThan(png.count, 10000)
-        let project = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-        let output = project.appendingPathComponent(".build/qa", isDirectory: true)
-        try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
-        try png.write(to: output.appendingPathComponent("dashboard.png"))
+        // Only rendering is optional: HTTP, database and report assertions still run in CI.
+        let renderer = TestEnvironment.skipsWindowRendering ? nil : try DashboardTestRenderer(model: model)
+        defer { renderer?.window.close() }
+        try await renderer?.capture("dashboard.png", width: 1120, height: 800)
 
         model.showApplication(ActivityIdentity(key: "com.google.Chrome", name: "Google Chrome"))
         XCTAssertEqual(model.dashboardPage, .applications)
         XCTAssertEqual(model.applicationReport?.seconds, 1200)
         for width in [1120, 920] {
-            window.setContentSize(NSSize(width: width, height: 950))
-            try await Task.sleep(for: .milliseconds(200))
-            host.layoutSubtreeIfNeeded()
-            let image = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
-            host.cacheDisplay(in: host.bounds, to: image)
-            let data = try XCTUnwrap(image.representation(using: .png, properties: [:]))
-            try data.write(to: output.appendingPathComponent("detail-dashboard-\(width).png"))
+            try await renderer?.capture("detail-dashboard-\(width).png", width: width, height: 950)
         }
         // Render the approved daily tracks with sparse, long, and very short sessions.
         let fixture: [(String, String, Double, Double)] = [
@@ -161,13 +141,7 @@ final class IntegrationTests: XCTestCase {
         model.dashboardPage = .dayTimeline
         XCTAssertEqual(model.dailyActivities.count, 12)
         for width in [1120, 920] {
-            window.setContentSize(NSSize(width: width, height: 1200))
-            try await Task.sleep(for: .milliseconds(200))
-            host.layoutSubtreeIfNeeded()
-            let image = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
-            host.cacheDisplay(in: host.bounds, to: image)
-            try XCTUnwrap(image.representation(using: .png, properties: [:]))
-                .write(to: output.appendingPathComponent("day-timeline-\(width).png"))
+            try await renderer?.capture("day-timeline-\(width).png", width: width, height: 1200)
         }
         try db.deleteAll()
         model.refresh()
@@ -175,11 +149,36 @@ final class IntegrationTests: XCTestCase {
         XCTAssertTrue(model.applicationReport?.sessions.isEmpty == true)
         model.reportTimeZone = .utcPlus8
         model.dashboardPage = .connection
-        try await Task.sleep(for: .milliseconds(200))
+        try await renderer?.capture("timezone-settings.png", width: 920, height: 1200)
+    }
+}
+
+@MainActor
+private final class DashboardTestRenderer {
+    let window: NSWindow
+    private let host: NSView
+    private let output: URL
+
+    init(model: MonitorModel) throws {
+        let project = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        output = project.appendingPathComponent(".build/qa", isDirectory: true)
+        try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
+        host = NSHostingView(rootView: DashboardView().environmentObject(model))
+        window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1120, height: 800),
+            styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        window.orderFront(nil)
+    }
+
+    func capture(_ filename: String, width: Int, height: Int) async throws {
+        window.setContentSize(NSSize(width: width, height: height))
+        try await Task.sleep(for: .milliseconds(300))
         host.layoutSubtreeIfNeeded()
-        let settings = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
-        host.cacheDisplay(in: host.bounds, to: settings)
-        try XCTUnwrap(settings.representation(using: .png, properties: [:]))
-            .write(to: output.appendingPathComponent("timezone-settings.png"))
+        let bitmap = try XCTUnwrap(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+        host.cacheDisplay(in: host.bounds, to: bitmap)
+        let png = try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
+        XCTAssertGreaterThan(png.count, 10000)
+        try png.write(to: output.appendingPathComponent(filename))
     }
 }

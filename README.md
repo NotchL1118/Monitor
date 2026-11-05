@@ -165,9 +165,11 @@ docs/images/            README 使用的测试数据截图
 
 ## 自动构建与发布
 
-GitHub Actions 的 **Build and Release** 工作流会在向 `main` 提交、创建或更新 PR、推送 `v*` 标签时运行，也支持在 Actions 页面手动运行。Apple Silicon 和 Intel 两种架构分别运行 Swift、界面渲染及 Chrome 扩展单元测试，测试通过后构建 release 应用，并验证签名和 ZIP 解压后的应用包。
+GitHub Actions 的 **Build and Release** 工作流会在向 `main` 提交、创建或更新 PR、推送 `v*` 标签时运行，也支持在 Actions 页面手动运行。Apple Silicon 和 Intel 两种架构分别运行 Swift 逻辑测试、本机 HTTP / 数据库集成测试和 Chrome 扩展测试，测试通过后构建 release 应用，并验证签名和 ZIP 解压后的应用包。
 
-普通分支构建的应用 ZIP 和校验文件保存在工作流的 **Artifacts** 中，保留 14 天；界面测试截图保留 7 天。手动选择分支运行只生成 Artifacts，选择版本标签运行则会进入发布流程。
+GitHub 托管 macOS runner 的 Metal 渲染环境不可靠，工作流显式设置 `MONITOR_SKIP_UI_TESTS=1`：5 项窗口 / 渲染测试报告为 skipped，集成测试仅跳过截图，继续验证全部数据和通信行为。本机默认运行完整测试；也可用 `MONITOR_SKIP_UI_TESTS=1 ./scripts/test.sh` 复现 CI 测试模式。
+
+普通分支构建的应用 ZIP 和校验文件保存在工作流的 **Artifacts** 中，保留 14 天；启用界面测试时生成的截图保留 7 天。手动选择分支运行只生成 Artifacts，选择版本标签运行则会进入发布流程。
 
 发布时，先更新 `Resources/Info.plist` 中的 `CFBundleShortVersionString` 和 `CFBundleVersion`，同步 README 版本说明；若改动了扩展，也更新 `ChromeExtension/manifest.json` 中的版本。提交并推送代码后，再创建与应用版本完全一致的标签。例如应用版本为 `0.3.1`：
 
