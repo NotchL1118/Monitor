@@ -220,7 +220,7 @@ struct ApplicationDetailView: View {
                             Capsule().fill(Palette.green.opacity(selectedSession == session.id ? 1 : 0.6))
                                 .frame(width: max(1, geometry.size.width * end.timeIntervalSince(start) / span))
                                 .offset(x: geometry.size.width * start.timeIntervalSince(domain.lowerBound) / span)
-                                .help("\(time(session.start)) – \(time(session.end)) · \(durationText(session.seconds))")
+                                .help("\(time(session.start)) – \(time(session.end)) · \(durationText(session.seconds))\(interruptionText(report.interruptions[session.id]))")
                         }
                     }
                 }
@@ -283,6 +283,7 @@ struct ApplicationDetailView: View {
                 session.start < $0.interval.end && session.end > $0.interval.start
             } == true
             BrowserSessionView(session: session, visits: report.browserVisits(in: session), calendar: calendar,
+                activeSeconds: report.activeSeconds[session.id], interruptions: report.interruptions[session.id] ?? 0,
                 initiallyExpanded: session.id == report.sessions.first?.id, highlighted: highlighted)
         } else { sessionRow(session) }
     }
@@ -300,7 +301,8 @@ struct ApplicationDetailView: View {
                 Text("\(time(session.start))  –  \(time(session.end, ending: true))")
                     .font(.system(size: 12, design: .monospaced))
                 Spacer()
-                Text(durationText(session.seconds)).font(.system(size: 11)).foregroundStyle(Palette.muted)
+                Text(durationText(session.seconds) + interruptionText(report.interruptions[session.id]))
+                    .font(.system(size: 11)).foregroundStyle(Palette.muted)
             }.padding(.horizontal, 12).padding(.vertical, 12)
                 .background(matches ? Palette.green.opacity(0.08) : Palette.background.opacity(0.5),
                             in: RoundedRectangle(cornerRadius: 8))

@@ -50,6 +50,7 @@ final class MonitorModel: ObservableObject {
     private var tracker = ActivityTracker(now: Date())
     private var server: LocalServer?
     private var timer: Timer?
+    private var napActivity: NSObjectProtocol?
     private var observers: [(NotificationCenter, NSObjectProtocol)] = []
     private var suspensionReasons: Set<String> = []
     private var started = false
@@ -123,6 +124,9 @@ final class MonitorModel: ObservableObject {
         tracker.setEnabled(recording, at: Date())
         updateFrontmost()
         refresh()
+        // Without this, App Nap throttles the background sampling timer and intervals get discarded as gaps.
+        napActivity = ProcessInfo.processInfo.beginActivity(options: [.userInitiatedAllowingIdleSystemSleep],
+            reason: "记录前台应用使用时长")
         let timer = Timer(timeInterval: 5, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.sample() }
         }
@@ -142,6 +146,7 @@ final class MonitorModel: ObservableObject {
         mascot.stop()
         persist(until: Date())
         timer?.invalidate()
+        if let napActivity { ProcessInfo.processInfo.endActivity(napActivity); self.napActivity = nil }
         for (center, token) in observers { center.removeObserver(token) }
         observers.removeAll()
         server?.stop()
@@ -293,6 +298,12 @@ final class MonitorModel: ObservableObject {
             notice = "历史记录已清空。"
         } catch { notice = "清空失败：\(error.localizedDescription)" }
     }
+}
+
+/// Suffix for a merged block, e.g. " · 含 3 次短暂切换"; empty when nothing was absorbed.
+func interruptionText(_ count: Int?) -> String {
+    guard let count, count > 0 else { return "" }
+    return " · 含 \(count) 次短暂切换"
 }
 
 func durationText(_ seconds: Double) -> String {

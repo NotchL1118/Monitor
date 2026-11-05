@@ -71,7 +71,9 @@ public struct BrowserUpdate: Codable {
 /// Receives a monotonic sequence of samples. App and website durations are separate dimensions.
 public struct ActivityTracker {
     public static let browserTTL: TimeInterval = 75
-    public static let maximumGap: TimeInterval = 15
+    /// Sleep, lock and session changes stop the clock via notifications; this only guards against
+    /// unexplained stalls. Kept well above the 5 s sampling period so a late timer doesn't lose time.
+    public static let maximumGap: TimeInterval = 60
     public static let chromeBundleID = "com.google.Chrome"
     public private(set) var application: ActivityIdentity?
     public private(set) var browser: BrowserUpdate?

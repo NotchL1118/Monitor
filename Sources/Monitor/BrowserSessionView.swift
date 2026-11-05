@@ -28,8 +28,14 @@ struct BrowserSessionView: View {
     let highlighted: Bool
     @State private var expanded: Bool
 
-    init(session: ActivitySlice, visits: [ActivitySlice], calendar: Calendar, initiallyExpanded: Bool = false, highlighted: Bool = false) {
+    /// Recorded Chrome time inside a merged block; the span itself also covers brief switches away.
+    let activeSeconds: Double
+    let interruptions: Int
+
+    init(session: ActivitySlice, visits: [ActivitySlice], calendar: Calendar, activeSeconds: Double? = nil, interruptions: Int = 0,
+         initiallyExpanded: Bool = false, highlighted: Bool = false) {
         self.session = session; self.visits = visits; self.calendar = calendar
+        self.activeSeconds = min(activeSeconds ?? session.seconds, session.seconds); self.interruptions = interruptions
         self.highlighted = highlighted
         _expanded = State(initialValue: initiallyExpanded)
     }
@@ -40,7 +46,7 @@ struct BrowserSessionView: View {
                 ForEach(BrowserVisitGroup.groups(visits)) { group in
                     BrowserDomainView(group: group, calendar: calendar)
                 }
-                let missing = max(0, session.seconds - visits.reduce(0) { $0 + $1.seconds })
+                let missing = max(0, activeSeconds - visits.reduce(0) { $0 + $1.seconds })
                 if visits.isEmpty || missing >= 1 {
                     Label(visits.isEmpty ? "该时段没有网页记录" : "另有 \(durationText(missing)) 未记录网页",
                           systemImage: "minus.circle")
@@ -55,6 +61,9 @@ struct BrowserSessionView: View {
                     .font(.system(size: 12, design: .monospaced))
                 Spacer()
                 Text(durationText(session.seconds)).font(.system(size: 11, weight: .medium))
+                if interruptions > 0 {
+                    Text("含 \(interruptions) 次短暂切换").font(.system(size: 10)).foregroundStyle(Palette.muted)
+                }
                 Text("\(Set(visits.map(\.key)).count) 个网站").font(.system(size: 10)).foregroundStyle(Palette.muted)
             }.padding(.vertical, 5)
         }.tint(Palette.green).padding(14)

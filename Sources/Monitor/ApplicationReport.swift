@@ -10,9 +10,11 @@ struct UsageBucket: Identifiable {
 
 struct SessionDay: Identifiable {
     let date: Date
+    /// Merged blocks starting or continuing on this day.
     let sessions: [ActivitySlice]
+    /// Recorded foreground time on this day, excluding absorbed switches.
+    let seconds: Double
     var id: Date { date }
-    var seconds: Double { sessions.reduce(0) { $0 + $1.seconds } }
 }
 
 struct ApplicationReport {
@@ -20,11 +22,16 @@ struct ApplicationReport {
     let period: ReportPeriod
     let interval: DateInterval
     let calendar: Calendar
+    /// Blocks with brief switches (< 30 s) absorbed; see `SessionMerger`.
     let sessions: [ActivitySlice]
     let buckets: [UsageBucket]
     let days: [SessionDay]
     let websites: [ActivitySlice]
-    var seconds: Double { sessions.reduce(0) { $0 + $1.seconds } }
+    /// Recorded foreground time, excluding absorbed switches.
+    let seconds: Double
+    let interruptions: [Int64: Int]
+    /// Recorded time of each merged block, keyed like `interruptions`.
+    let activeSeconds: [Int64: Double]
     var longest: Double { sessions.map(\.seconds).max() ?? 0 }
     var peak: UsageBucket? { buckets.filter { $0.seconds > 0 }.max { $0.seconds < $1.seconds } }
 
@@ -42,19 +49,29 @@ struct ApplicationReport {
             guard start < stop else { return nil }
             return ActivitySlice(id: slice.id, kind: slice.kind, key: slice.key, name: slice.name, start: start, end: stop)
         }.sorted { $0.start < $1.start }
-        self.sessions = clipped
-        var grouped: [Date: [ActivitySlice]] = [:]
-        for slice in clipped {
-            var cursor = slice.start
-            while cursor < slice.end {
-                let day = calendar.dateInterval(of: .day, for: cursor)!
-                let stop = min(slice.end, day.end)
-                grouped[day.start, default: []].append(ActivitySlice(id: slice.id, kind: slice.kind,
-                    key: slice.key, name: slice.name, start: cursor, end: stop))
-                cursor = stop
+        seconds = clipped.reduce(0) { $0 + $1.seconds }
+        let merged = SessionMerger.merge(clipped)
+        self.sessions = merged.map(\.slice)
+        interruptions = Dictionary(merged.map { ($0.slice.id, $0.interruptions) }, uniquingKeysWith: max)
+        activeSeconds = Dictionary(merged.map { ($0.slice.id, $0.activeSeconds) }, uniquingKeysWith: max)
+        func byDay(_ slices: [ActivitySlice]) -> [Date: [ActivitySlice]] {
+            var grouped: [Date: [ActivitySlice]] = [:]
+            for slice in slices {
+                var cursor = slice.start
+                while cursor < slice.end {
+                    let day = calendar.dateInterval(of: .day, for: cursor)!
+                    let stop = min(slice.end, day.end)
+                    grouped[day.start, default: []].append(ActivitySlice(id: slice.id, kind: slice.kind,
+                        key: slice.key, name: slice.name, start: cursor, end: stop))
+                    cursor = stop
+                }
             }
+            return grouped
         }
-        days = grouped.keys.sorted().map { SessionDay(date: $0, sessions: grouped[$0]!) }
+        let blocksByDay = byDay(self.sessions), rawByDay = byDay(clipped)
+        days = blocksByDay.keys.sorted().map { day in
+            SessionDay(date: day, sessions: blocksByDay[day]!, seconds: rawByDay[day, default: []].reduce(0) { $0 + $1.seconds })
+        }
 
         // Calendar arithmetic preserves 23/25-hour days. Future buckets are absent, not zero.
         var result: [UsageBucket] = []
