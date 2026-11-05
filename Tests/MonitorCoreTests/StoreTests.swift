@@ -73,4 +73,40 @@ final class StoreTests: XCTestCase {
         XCTAssertEqual(summary?.seconds, sessions.reduce(0) { $0 + $1.seconds })
         XCTAssertTrue(try store.sessions(kind: .application, key: "missing", from: start, to: end).isEmpty)
     }
+
+    func testRetentionDeletesOnlySlicesEndedBeforeCutoff() throws {
+        let store = try ActivityStore(path: ":memory:")
+        XCTAssertNil(try store.earliestActivityStart())
+        try store.record([slice(0, 10), slice(20, 30, key: "other"), slice(95, 105, key: "site", kind: .website), slice(200, 210)])
+        let cutoff = Date(timeIntervalSince1970: 100)
+        XCTAssertEqual(try store.activityCount(endedBefore: cutoff), 2)
+        XCTAssertEqual(try store.deleteActivities(endedBefore: cutoff), 2)
+        // The slice crossing the cutoff stays whole.
+        XCTAssertEqual(try store.earliestActivityStart(), Date(timeIntervalSince1970: 95))
+        let rows = try store.activities(from: .distantPast, to: .distantFuture, limit: -1)
+        XCTAssertEqual(rows.map(\.key).sorted(), ["app", "site"])
+        XCTAssertEqual(try store.deleteActivities(endedBefore: cutoff), 0)
+        // Recording keeps extending the latest slice after cleanup.
+        try store.record([slice(210, 220)])
+        XCTAssertEqual(try store.activities(from: .distantPast, to: .distantFuture, limit: -1).count, 2)
+    }
+
+    func testRetentionCompactsDatabaseFile() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let path = directory.appendingPathComponent("test.sqlite").path
+        let store = try ActivityStore(path: path)
+        let filler = String(repeating: "x", count: 500)
+        try store.record((0..<2000).map { slice(Double($0 * 10), Double($0 * 10 + 5), key: "\(filler)\($0)") })
+        func size() throws -> Int64 {
+            ["", "-wal"].reduce(0) { total, suffix in
+                let attributes = try? FileManager.default.attributesOfItem(atPath: path + suffix)
+                return total + ((attributes?[.size] as? NSNumber)?.int64Value ?? 0)
+            }
+        }
+        let before = try size()
+        XCTAssertEqual(try store.deleteActivities(endedBefore: Date(timeIntervalSince1970: 19_000)), 1900)
+        XCTAssertLessThan(try size(), before / 4)
+    }
 }
