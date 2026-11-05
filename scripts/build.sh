@@ -30,4 +30,7 @@ done
 iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/AppIcon.icns"
 codesign --force --sign - "$APP"
 codesign --verify --deep --strict "$APP"
+# In-place builds only replace nested files. Refresh the bundle timestamp so
+# macOS invalidates the previous app icon when the rebuilt app is launched.
+touch "$APP"
 printf '\nBuilt: %s\nOpen with: open "%s"\n' "$APP" "$APP"
