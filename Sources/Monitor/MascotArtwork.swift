@@ -1,7 +1,7 @@
 import AppKit
 
 enum MascotFrame: String, CaseIterable {
-    case awake, focus, blink, sleeping, waiting
+    case awake, sleeping, waiting
 }
 
 /// The small-size companion to the illustrated A logo. Shared by the app and asset exporter.
@@ -84,12 +84,12 @@ enum MascotArtwork {
             }
         }
 
-        let closed = frame == .blink || frame == .sleeping
+        let closed = frame == .sleeping
         for x: CGFloat in [43, 79] {
             if closed {
                 curve(CGPoint(x: x - 6, y: 83), CGPoint(x: x + 6, y: 83), CGPoint(x: x - 2, y: 87), CGPoint(x: x + 2, y: 87), width: template ? 4 : 3)
             } else {
-                oval(CGRect(x: x - 4, y: 75, width: 8, height: frame == .focus ? 9 : 13), ink)
+                oval(CGRect(x: x - 4, y: 75, width: 8, height: 13), ink)
                 if !template { oval(CGRect(x: x - 2, y: 76, width: 3, height: 4), cream) }
             }
         }
@@ -110,8 +110,7 @@ enum MascotArtwork {
             oval(CGRect(x: 74, y: 10, width: 45, height: 45), ink)
             oval(CGRect(x: 78, y: 14, width: 37, height: 37), cream)
             oval(CGRect(x: 83, y: 19, width: 27, height: 27), ink)
-            let inset: CGFloat = frame == .focus || frame == .blink ? 3 : 0
-            oval(CGRect(x: 87 + inset / 2, y: 23 + inset / 2, width: 19 - inset, height: 19 - inset), orange)
+            oval(CGRect(x: 87, y: 23, width: 19, height: 19), orange)
             oval(CGRect(x: 89, y: 25, width: 7, height: 5), cream)
         }
     }

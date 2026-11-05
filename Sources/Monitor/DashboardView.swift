@@ -68,7 +68,7 @@ struct DashboardView: View {
             }
             Spacer()
             VStack(alignment: .leading, spacing: 10) {
-                MascotAvatar(animator: model.mascot, size: 46)
+                MascotAvatar(state: model.mascot, size: 46)
                 HStack(spacing: 7) {
                     Circle().fill(model.recording ? Palette.green : Palette.orange).frame(width: 7, height: 7)
                     Text(model.recording ? "正在记录" : (model.paused ? "已暂停" : "等待恢复"))
@@ -300,12 +300,6 @@ struct DashboardView: View {
                 Text("一次配对，之后只需让 Monitor 保持运行。")
                     .font(.system(size: 12)).foregroundStyle(Palette.muted)
             }
-            VStack(alignment: .leading, spacing: 12) {
-                Label("机娘与动效", systemImage: "sparkles").font(.system(size: 17, weight: .semibold))
-                Toggle("切换应用时眨眼", isOn: $model.mascotAnimationsEnabled).toggleStyle(.switch)
-                Text("机娘在切换前台应用时轻轻眨眼，暂停记录时闭眼休息。频繁切换时会减少触发；开启系统「减少动态效果」后保持静态。")
-                    .font(.system(size: 12)).foregroundStyle(Palette.muted).lineSpacing(4)
-            }.padding(26).background(.white, in: RoundedRectangle(cornerRadius: 14))
             VStack(alignment: .leading, spacing: 16) {
                 Label("时间与时区", systemImage: "clock").font(.system(size: 17, weight: .semibold))
                 HStack {

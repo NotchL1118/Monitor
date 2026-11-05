@@ -4,7 +4,7 @@ import MonitorCore
 struct MenuDashboard: View {
     @ObservedObject var model: MonitorModel
     let openHome: () -> Void
-    @State private var kind = ActivityKind.website
+    @State private var kind = ActivityKind.application
     private var today: TodaySnapshot { model.today }
     private var rows: [UsageSummary] { kind == .website ? today.sites : today.apps }
     private var status: String {
@@ -16,15 +16,27 @@ struct MenuDashboard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                MascotAvatar(animator: model.mascot, size: 44)
+                MascotAvatar(state: model.mascot, size: 44)
                 VStack(alignment: .leading, spacing: 3) {
                     Text("时间足迹").font(.headline)
                     Text(model.recording ? "陪你记下今天" : status).font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
-                Text(today.date.formatted(model.reportTimeZone.formatStyle.month().day().weekday()))
-                    .font(.caption).foregroundStyle(.secondary)
-                    .help(model.reportTimeZone.label)
+                VStack(alignment: .trailing, spacing: 4) {
+                    Button(action: openHome) {
+                        HStack(spacing: 4) {
+                            Text("打开主页")
+                            Image(systemName: "chevron.right").font(.caption2.weight(.semibold))
+                        }
+                        .font(.caption.weight(.medium))
+                        .padding(.horizontal, 9).padding(.vertical, 5)
+                        .background(.secondary.opacity(0.09), in: RoundedRectangle(cornerRadius: 7))
+                        .contentShape(Rectangle())
+                    }.buttonStyle(.plain)
+                    Text(today.date.formatted(model.reportTimeZone.formatStyle.month().day().weekday()))
+                        .font(.caption2).foregroundStyle(.secondary)
+                        .help(model.reportTimeZone.label)
+                }
             }
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
@@ -93,7 +105,6 @@ struct MenuDashboard: View {
                 Text(model.recording ? "当前应用 · \(model.currentApp)" : status).lineLimit(1)
                     .font(.caption).foregroundStyle(.secondary)
                 Spacer()
-                Button("打开主页 ›", action: openHome).buttonStyle(.plain).font(.callout)
             }
         }.padding(16).frame(width: 350).fixedSize(horizontal: false, vertical: true)
             .environment(\.calendar, model.reportCalendar)

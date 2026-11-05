@@ -6,7 +6,6 @@ const dot = document.querySelector("#dot");
 const token = document.querySelector("#token");
 const disconnect = document.querySelector("#disconnect");
 const mascot = document.querySelector("#mascot");
-const motion = document.querySelector("#motion");
 
 function render(result) {
   const connected = Boolean(result?.connected);
@@ -44,15 +43,4 @@ disconnect.addEventListener("click", () => { void request({ type: "disconnect" }
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area === "session" && changes.connection?.newValue) render(changes.connection.newValue);
 });
-function setMotion(enabled) {
-  motion.checked = enabled;
-  document.body.dataset.motion = enabled ? "on" : "off";
-}
-motion.addEventListener("change", () => {
-  setMotion(motion.checked);
-  void chrome.storage.local.set({ mascotMotionEnabled: motion.checked }).catch(() => {});
-});
-void chrome.storage.local.get("mascotMotionEnabled").then(settings => {
-  setMotion(settings.mascotMotionEnabled !== false);
-}).catch(() => { setMotion(false); });
 void request({ type: "status" });

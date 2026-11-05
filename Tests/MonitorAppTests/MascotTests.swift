@@ -5,50 +5,16 @@ import XCTest
 
 final class MascotTests: XCTestCase {
     @MainActor
-    func testSwitchesBlinkOnceAndPauseCancelsPendingFrames() async throws {
-        let mascot = MascotAnimator()
-        defer { mascot.stop() }
-        mascot.update(applicationID: "editor", resting: .awake, animate: true, now: 0)
-        XCTAssertEqual(mascot.frame, .awake, "startup must not animate")
-        mascot.update(applicationID: "editor", resting: .awake, animate: true, now: 1)
-        XCTAssertEqual(mascot.frame, .awake, "sampling the same app must not animate")
-        mascot.update(applicationID: "browser", resting: .awake, animate: true, now: 2)
-        XCTAssertEqual(mascot.frame, .focus)
-        try await Task.sleep(for: .milliseconds(110))
-        XCTAssertEqual(mascot.frame, .blink)
-        mascot.update(applicationID: "finder", resting: .awake, animate: true, now: 2.1)
-        XCTAssertEqual(mascot.frame, .blink, "rapid switches must not restart the animation")
-        try await Task.sleep(for: .milliseconds(300))
-        XCTAssertEqual(mascot.frame, .awake)
-        mascot.update(applicationID: "editor", resting: .awake, animate: true, now: 4)
-        XCTAssertEqual(mascot.frame, .focus)
-        mascot.update(applicationID: "editor", resting: .sleeping, animate: true, now: 4.1)
-        XCTAssertEqual(mascot.frame, .sleeping)
-        try await Task.sleep(for: .milliseconds(400))
-        XCTAssertEqual(mascot.frame, .sleeping, "cancelled frames must not wake a paused mascot")
-        mascot.update(applicationID: "browser", resting: .awake, animate: false, now: 6)
-        XCTAssertEqual(mascot.frame, .awake)
-        mascot.update(applicationID: "editor", resting: .awake, animate: true, now: 8)
-        mascot.update(applicationID: "editor", resting: .awake, animate: false, now: 8.1)
-        try await Task.sleep(for: .milliseconds(400))
-        XCTAssertEqual(mascot.frame, .awake, "turning off motion must cancel an in-flight blink")
-    }
-
-    @MainActor
-    func testMotionPreferencePersistsAndPausedBindingSleeps() throws {
+    func testFaceFollowsRecordingState() throws {
         let suite = "Monitor-Mascot-QA-\(UUID().uuidString)"
         let preferences = try XCTUnwrap(UserDefaults(suiteName: suite))
         defer { preferences.removePersistentDomain(forName: suite) }
         let model = MonitorModel(preferences: preferences)
-        XCTAssertTrue(model.mascotAnimationsEnabled)
-        model.mascotAnimationsEnabled = false
-        let restored = MonitorModel(preferences: preferences)
-        XCTAssertFalse(restored.mascotAnimationsEnabled)
+        defer { model.mascot.stop() }
         model.paused = true
         XCTAssertEqual(model.mascot.frame, .sleeping)
         model.storageError = "Test storage failure"
         XCTAssertEqual(model.mascot.frame, .waiting)
-        model.mascot.stop(); restored.mascot.stop()
     }
 
     @MainActor

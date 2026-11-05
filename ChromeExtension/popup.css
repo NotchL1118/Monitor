@@ -11,12 +11,7 @@ main { padding: 14px 20px; }
 h2 { margin: 0 0 22px; font-size: 27px; line-height: 1.45; font-weight: 600; letter-spacing: -.6px; }
 .hero { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
 .hero h2 { margin: 0; font-size: 23px; line-height: 1.35; }
-#mascot { width: 70px; height: 70px; flex-shrink: 0; object-fit: contain; transform-origin: 50% 85%; }
-body[data-motion="on"] #mascot { animation: hello .45s ease-out 1; }
-@keyframes hello { 0% { transform: rotate(0); } 40% { transform: rotate(-7deg); } 75% { transform: rotate(3deg); } 100% { transform: rotate(0); } }
-@media (prefers-reduced-motion: reduce) { body[data-motion="on"] #mascot { animation: none; } }
-.motion-option { display: flex; align-items: center; gap: 7px; margin: 12px 0 0; color: #6e7c69; font-size: 10px; font-weight: 400; }
-.motion-option input { display: inline-block; width: 13px; height: 13px; margin: 0; padding: 0; accent-color: #3e624b; }
+#mascot { width: 70px; height: 70px; flex-shrink: 0; object-fit: contain; }
 .status { display: flex; align-items: flex-start; gap: 9px; padding: 10px; background: #e9ede4; border-radius: 10px; margin-bottom: 14px; }
 .dot { flex: 0 0 7px; height: 7px; margin-top: 5px; border-radius: 50%; background: #ae7c4f; }
 .dot.connected { background: #4c785a; }

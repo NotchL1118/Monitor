@@ -31,10 +31,7 @@ final class MonitorModel: ObservableObject {
     @Published private(set) var applicationReportError: String?
     @Published var currentApp = "等待应用活动"
     @Published private(set) var currentApplicationID: String?
-    @Published var mascotAnimationsEnabled: Bool {
-        didSet { preferences.set(mascotAnimationsEnabled, forKey: "mascotAnimationsEnabled") }
-    }
-    let mascot = MascotAnimator()
+    let mascot = MascotState()
     @Published var browserConnected = false
     @Published var serverReady = false
     @Published var serverError: String?
@@ -72,7 +69,6 @@ final class MonitorModel: ObservableObject {
 
     init(dataDirectory: URL? = nil, preferences: UserDefaults = .standard) {
         self.preferences = preferences
-        mascotAnimationsEnabled = preferences.object(forKey: "mascotAnimationsEnabled") as? Bool ?? true
         reportTimeZone = preferences.string(forKey: ReportTimeZone.preferenceKey).flatMap(ReportTimeZone.init(rawValue:)) ?? .system
         self.dataDirectory = dataDirectory ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("Monitor", isDirectory: true)

@@ -72,15 +72,6 @@ try {
   assert.equal(await popup.locator("#mascot").getAttribute("data-state"), "sleeping");
   await popup.waitForFunction(async () => (await chrome.action.getTitle({})).includes("已暂停"));
   await popup.locator("body").screenshot({ path: resolve(output, "chrome-popup-paused.png") });
-  await popup.locator("#motion").uncheck();
-  await popup.waitForFunction(async () => (await chrome.storage.local.get("mascotMotionEnabled")).mascotMotionEnabled === false);
-  await popup.reload();
-  await popup.getByText("已连接 · 记录已暂停", { exact: true }).waitFor();
-  assert.equal(await popup.locator("#motion").isChecked(), false);
-  assert.equal(await popup.locator("#mascot").evaluate(element => getComputedStyle(element).animationName), "none");
-  await popup.locator("#motion").check();
-  await popup.emulateMedia({ reducedMotion: "reduce" });
-  assert.equal(await popup.locator("#mascot").evaluate(element => getComputedStyle(element).animationName), "none");
   recording = true;
   await popup.locator("#refresh").click();
   await popup.getByText("已连接 · 正在记录", { exact: true }).waitFor();
