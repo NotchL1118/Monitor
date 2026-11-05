@@ -6,13 +6,14 @@ enum MascotFrame: String, CaseIterable {
 
 /// The small-size companion to the illustrated A logo. Shared by the app and asset exporter.
 enum MascotArtwork {
-    static func image(frame: MascotFrame = .awake, size: CGFloat = 128, template: Bool = false) -> NSImage {
+    static func image(frame: MascotFrame = .awake, size: CGFloat = 128, template: Bool = false,
+                      showsLens: Bool = true) -> NSImage {
         let image = NSImage(size: NSSize(width: size, height: size), flipped: true) { _ in
             guard let c = NSGraphicsContext.current?.cgContext else { return false }
             c.saveGState()
             defer { c.restoreGState() }
             c.scaleBy(x: size / 128, y: size / 128)
-            draw(in: c, frame: frame, template: template)
+            draw(in: c, frame: frame, template: template, showsLens: showsLens)
             return true
         }
         image.isTemplate = template
@@ -20,7 +21,7 @@ enum MascotArtwork {
         return image
     }
 
-    private static func draw(in c: CGContext, frame: MascotFrame, template: Bool) {
+    private static func draw(in c: CGContext, frame: MascotFrame, template: Bool, showsLens: Bool) {
         let ink = NSColor(srgbRed: 0.08, green: 0.20, blue: 0.14, alpha: 1).cgColor
         let hair = NSColor(srgbRed: 0.20, green: 0.35, blue: 0.26, alpha: 1).cgColor
         let cream = NSColor(srgbRed: 1, green: 0.94, blue: 0.83, alpha: 1).cgColor
@@ -104,8 +105,8 @@ enum MascotArtwork {
         }
 
         // At 18 points, the upper-right lens reads as an unread-notification badge.
-        // Reserve it for the color artwork; menu-bar states use the face alone.
-        if !template {
+        // Reserve it for larger color artwork; toolbar states use the face alone.
+        if !template && showsLens {
             oval(CGRect(x: 74, y: 10, width: 45, height: 45), ink)
             oval(CGRect(x: 78, y: 14, width: 37, height: 37), cream)
             oval(CGRect(x: 83, y: 19, width: 27, height: 27), ink)

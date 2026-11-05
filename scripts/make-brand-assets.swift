@@ -11,7 +11,8 @@ enum ExportBrandAssets {
         for frame in [MascotFrame.awake, .sleeping, .waiting] {
             for size in [16, 24, 32, 48, 128, 256] {
                 let name = frame == .awake ? "monitor-\(size).png" : "monitor-\(frame.rawValue)-\(size).png"
-                try export(MascotArtwork.image(frame: frame), size: size, to: icons.appendingPathComponent(name))
+                try export(MascotArtwork.image(frame: frame, showsLens: size > 48),
+                           size: size, to: icons.appendingPathComponent(name))
             }
         }
         for frame in MascotFrame.allCases {
