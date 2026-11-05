@@ -54,7 +54,7 @@ enum MascotArtwork {
             c.setStrokeColor(template ? black : ink); c.setLineWidth(width); c.strokePath()
         }
 
-        // Broad bob silhouette and oversized lens remain legible at 16–18 points.
+        // The broad bob silhouette remains legible at menu-bar sizes.
         let bob = CGMutablePath()
         bob.move(to: CGPoint(x: 13, y: 107))
         bob.addCurve(to: CGPoint(x: 14, y: 46), control1: CGPoint(x: 4, y: 91), control2: CGPoint(x: 8, y: 63))
@@ -103,14 +103,13 @@ enum MascotArtwork {
             oval(CGRect(x: 84, y: 91, width: 12, height: 5), orange)
         }
 
-        // The circular camera hair clip is the A concept's identifying feature.
-        oval(CGRect(x: 74, y: 10, width: 45, height: 45), ink)
-        oval(CGRect(x: 78, y: 14, width: 37, height: 37), cream, cutout: true)
-        oval(CGRect(x: 83, y: 19, width: 27, height: 27), ink)
-        let inset: CGFloat = frame == .focus || frame == .blink ? 3 : 0
-        if template {
-            oval(CGRect(x: 88 + inset / 2, y: 24 + inset / 2, width: 17 - inset, height: 17 - inset), cream, cutout: true)
-        } else {
+        // At 18 points, the upper-right lens reads as an unread-notification badge.
+        // Reserve it for the color artwork; menu-bar states use the face alone.
+        if !template {
+            oval(CGRect(x: 74, y: 10, width: 45, height: 45), ink)
+            oval(CGRect(x: 78, y: 14, width: 37, height: 37), cream)
+            oval(CGRect(x: 83, y: 19, width: 27, height: 27), ink)
+            let inset: CGFloat = frame == .focus || frame == .blink ? 3 : 0
             oval(CGRect(x: 87 + inset / 2, y: 23 + inset / 2, width: 19 - inset, height: 19 - inset), orange)
             oval(CGRect(x: 89, y: 25, width: 7, height: 5), cream)
         }
