@@ -3,14 +3,17 @@ import SwiftUI
 
 /// The native view covers the card, including its title and padding. Only the rows move.
 struct RankingViewport<Rows: View>: NSViewRepresentable {
+    /// Distance from the card's top edge to the first row; the title and ring sit above it.
+    var topInset: CGFloat = 60
     @ViewBuilder var rows: () -> Rows
 
     func makeNSView(context: Context) -> RankingCardSurface<Rows> {
-        RankingCardSurface(rows: rows())
+        RankingCardSurface(rows: rows(), topInset: topInset)
     }
 
     func updateNSView(_ view: RankingCardSurface<Rows>, context: Context) {
         view.document.rootView = rows()
+        view.topInset = topInset
     }
 
     static func dismantleNSView(_ view: RankingCardSurface<Rows>, coordinator: ()) {
@@ -22,8 +25,13 @@ final class RankingCardSurface<Rows: View>: NSView {
     let scroller = NSScrollView()
     let document: NSHostingView<Rows>
     private var monitor: Any?
+    private var topConstraint: NSLayoutConstraint!
+    var topInset: CGFloat {
+        get { topConstraint.constant }
+        set { if topConstraint.constant != newValue { topConstraint.constant = newValue } }
+    }
 
-    init(rows: Rows) {
+    init(rows: Rows, topInset: CGFloat = 60) {
         document = NSHostingView(rootView: rows)
         super.init(frame: .zero)
         scroller.drawsBackground = false
@@ -38,8 +46,9 @@ final class RankingCardSurface<Rows: View>: NSView {
         scroller.documentView = document
         document.sizingOptions = [.intrinsicContentSize]
         document.translatesAutoresizingMaskIntoConstraints = false
+        topConstraint = scroller.topAnchor.constraint(equalTo: topAnchor, constant: topInset)
         NSLayoutConstraint.activate([
-            scroller.topAnchor.constraint(equalTo: topAnchor, constant: 60),
+            topConstraint,
             scroller.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -22),
             scroller.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 22),
             scroller.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -22),

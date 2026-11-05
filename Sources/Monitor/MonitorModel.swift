@@ -56,6 +56,11 @@ final class MonitorModel: ObservableObject {
     var recording: Bool { !paused && !screenUnavailable && storageError == nil && store != nil }
     var appSeconds: Double { applications.reduce(0) { $0 + $1.seconds } }
     var websiteSeconds: Double { websites.reduce(0) { $0 + $1.seconds } }
+    /// Items shorter than this are noise in the lists, the share ring and the counts.
+    /// Totals above still use every raw slice.
+    static let minimumListedSeconds: Double = 5
+    var listedApplications: [UsageSummary] { applications.filter { $0.seconds >= Self.minimumListedSeconds } }
+    var listedWebsites: [UsageSummary] { websites.filter { $0.seconds >= Self.minimumListedSeconds } }
     var reportCalendar: Calendar { reportTimeZone.calendar }
     var reportInterval: DateInterval { period.interval(containing: selectedDate, calendar: reportCalendar) }
     var reportLabel: String { period.label(for: selectedDate, calendar: reportCalendar) }

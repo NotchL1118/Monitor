@@ -13,6 +13,7 @@ enum Palette {
 struct DashboardView: View {
     @EnvironmentObject private var model: MonitorModel
     @State private var confirmDelete = false
+    @State private var shareHighlight: [ActivityKind: String] = [:]
 
     var body: some View {
         HStack(spacing: 0) {
@@ -90,7 +91,7 @@ struct DashboardView: View {
 
     private func navigation(_ title: String, symbol: String, id: DashboardPage) -> some View {
         Button {
-            if id == .applications, model.selectedApplication == nil, let app = model.applications.first {
+            if id == .applications, model.selectedApplication == nil, let app = model.listedApplications.first {
                 model.selectedApplication = ActivityIdentity(key: app.key, name: app.name)
             }
             model.dashboardPage = id
@@ -131,7 +132,7 @@ struct DashboardView: View {
             ReportPicker().id("report-range")
             ScrollView(.horizontal) {
                 HStack(spacing: 8) {
-                    ForEach(model.applications) { app in
+                    ForEach(model.listedApplications) { app in
                         Button { model.showApplication(ActivityIdentity(key: app.key, name: app.name)) } label: {
                             HStack(spacing: 7) {
                                 ActivityIcon(key: app.key, kind: .application).frame(width: 24, height: 24)
@@ -160,7 +161,7 @@ struct DashboardView: View {
             HStack(spacing: 14) {
                 statistic("电脑前台时长", value: durationText(model.appSeconds), symbol: "desktopcomputer", footnote: "已记录应用时长之和", accent: Palette.green)
                 statistic("网站浏览时长", value: durationText(model.websiteSeconds), symbol: "globe", footnote: "属于 Chrome 时长的一部分", accent: Palette.orange)
-                statistic("使用过的应用", value: "\(model.applications.count) 个", symbol: "square.stack.3d.up", footnote: "\(model.websites.count) 个网站留下足迹", accent: Palette.green)
+                statistic("使用过的应用", value: "\(model.listedApplications.count) 个", symbol: "square.stack.3d.up", footnote: "\(model.listedWebsites.count) 个网站留下足迹", accent: Palette.green)
             }
             if !model.browserConnected {
                 Button { model.dashboardPage = .connection } label: {
@@ -177,8 +178,8 @@ struct DashboardView: View {
                 }.buttonStyle(.plain)
             }
             HStack(alignment: .top, spacing: 16) {
-                ranking("应用", subtitle: "前台使用时间", items: model.applications, kind: .application)
-                ranking("网站", subtitle: "Chrome 当前标签页", items: model.websites, kind: .website)
+                ranking("应用", subtitle: "前台使用时间", items: model.listedApplications, kind: .application)
+                ranking("网站", subtitle: "Chrome 当前标签页", items: model.listedWebsites, kind: .website)
             }
             timelineCard
             Text("统计的是前台停留时间，不代表实际注意力。锁屏与休眠暂停计时；没有键鼠操作时仍会记录。")
@@ -194,52 +195,85 @@ struct DashboardView: View {
         }.padding(20).frame(maxWidth: .infinity, alignment: .leading).background(.white, in: RoundedRectangle(cornerRadius: 14))
     }
 
+    /// Height added to both ranking cards for the share ring, so the two cards stay level.
+    private static let ringBlock: CGFloat = UsageShareRing.size + 6
+
     private func ranking(_ title: String, subtitle: String, items: [UsageSummary], kind: ActivityKind) -> some View {
-        ZStack(alignment: .topLeading) {
-            RankingViewport {
+        let shares = UsageShare.make(items)
+        let showsRing = !model.listedApplications.isEmpty || !model.listedWebsites.isEmpty
+        let extra = showsRing ? Self.ringBlock : 0
+        let named = Set(shares.filter { !$0.isOther }.map(\.key))
+        let highlight = Binding<String?>(get: { shareHighlight[kind] }, set: { shareHighlight[kind] = $0 })
+        let total = items.reduce(0) { $0 + $1.seconds }
+        return ZStack(alignment: .topLeading) {
+            RankingViewport(topInset: items.isEmpty ? 60 : 60 + extra) {
                 if items.isEmpty {
                     VStack(spacing: 12) {
                         Image(systemName: kind == .application ? "clock" : "globe").font(.system(size: 25, weight: .light))
                         Text(kind == .application ? "所选时段还没有记录" : "所选时段还没有网站记录").font(.system(size: 12))
                         Text(kind == .application ? "让 Monitor 在菜单栏静静运行。" : "连接扩展后，在 Chrome 中浏览网页。")
                             .font(.system(size: 10))
-                    }.foregroundStyle(Palette.muted).frame(maxWidth: .infinity).frame(height: 220)
+                    }.foregroundStyle(Palette.muted).frame(maxWidth: .infinity).frame(height: 220 + extra)
                 } else {
                     VStack(spacing: 18) {
                         ForEach(items) { item in
+                            let shareKey = named.contains(item.key) ? item.key : UsageShare.otherKey
+                            let slot = shares.first { $0.key == shareKey }?.slot
+                            let row = rankingRow(item, kind: kind, maximum: items.first?.seconds ?? 1,
+                                                 color: SharePalette.color(slot: slot), fraction: item.seconds / max(total, 1),
+                                                 highlighted: shareHighlight[kind] == shareKey)
+                                .onHover { inside in
+                                    if inside { shareHighlight[kind] = shareKey }
+                                    else if shareHighlight[kind] == shareKey { shareHighlight[kind] = nil }
+                                }
                             if kind == .application {
                                 Button {
                                     model.showApplication(ActivityIdentity(key: item.key, name: item.name))
-                                } label: { rankingRow(item, kind: kind, maximum: items.first?.seconds ?? 1) }
+                                } label: { row }
                                     .buttonStyle(.plain).accessibilityLabel("查看\(item.name)的使用时间段")
                             } else {
-                                rankingRow(item, kind: kind, maximum: items.first?.seconds ?? 1)
+                                row
                             }
                         }
                     }.padding(.vertical, 2)
                 }
             }
-            HStack {
-                Text(title).font(.system(size: 16, weight: .semibold))
-                Spacer()
-                Text(subtitle).font(.system(size: 10)).foregroundStyle(Palette.muted)
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text(title).font(.system(size: 16, weight: .semibold))
+                    Spacer()
+                    Text(subtitle).font(.system(size: 10)).foregroundStyle(Palette.muted)
+                }
+                if !shares.isEmpty {
+                    HStack(spacing: 18) {
+                        UsageShareRing(shares: shares, kind: kind, highlighted: highlight)
+                        shareHeadline(shares, kind: kind)
+                            .font(.system(size: 12)).foregroundStyle(Palette.muted).lineSpacing(4)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
             }.padding(22)
-        }.frame(maxWidth: .infinity).frame(height: 302)
+        }.frame(maxWidth: .infinity).frame(height: 302 + extra)
             .background(.white, in: RoundedRectangle(cornerRadius: 14))
     }
 
-    private func rankingRow(_ item: UsageSummary, kind: ActivityKind, maximum: Double) -> some View {
+    private func rankingRow(_ item: UsageSummary, kind: ActivityKind, maximum: Double,
+                            color: Color, fraction: Double, highlighted: Bool) -> some View {
         HStack(spacing: 10) {
             ActivityIcon(key: item.key, kind: kind).frame(width: 29, height: 29)
             VStack(alignment: .leading, spacing: 7) {
-                HStack {
+                HStack(spacing: 6) {
+                    Circle().fill(color).frame(width: 7, height: 7)
                     Text(item.name).font(.system(size: 12, weight: .medium)).lineLimit(1).help(item.name)
                     Spacer(minLength: 4)
                     Text(durationText(item.seconds)).font(.system(size: 10)).foregroundStyle(Palette.muted).monospacedDigit()
+                    Text(UsageShare.percentText(fraction)).font(.system(size: 10)).foregroundStyle(Palette.muted.opacity(0.8))
+                        .monospacedDigit().frame(width: 30, alignment: .trailing)
                 }
                 GeometryReader { geometry in
                     Capsule().fill(Palette.background)
-                    Capsule().fill(kind == .application ? Palette.green.opacity(0.7) : Palette.orange.opacity(0.7))
+                    Capsule().fill(color.opacity(0.85))
                         .frame(width: max(3, geometry.size.width * item.seconds / max(maximum, 1)))
                 }.frame(height: 4)
             }
@@ -247,8 +281,12 @@ struct DashboardView: View {
                 Image(systemName: "chevron.right").font(.system(size: 9)).foregroundStyle(Palette.muted)
             }
         }.padding(.vertical, 4).contentShape(Rectangle())
-            .background(kind == .application && model.selectedApplication?.key == item.key ? Palette.green.opacity(0.06) : .clear,
-                        in: RoundedRectangle(cornerRadius: 7))
+            .background(rowBackground(item, kind: kind, highlighted: highlighted), in: RoundedRectangle(cornerRadius: 7))
+    }
+
+    private func rowBackground(_ item: UsageSummary, kind: ActivityKind, highlighted: Bool) -> Color {
+        if kind == .application && model.selectedApplication?.key == item.key { return Palette.green.opacity(0.06) }
+        return highlighted ? Palette.background.opacity(0.8) : .clear
     }
 
     private var timelineCard: some View {

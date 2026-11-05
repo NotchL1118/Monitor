@@ -33,6 +33,10 @@ public struct UsageSummary: Identifiable {
     public let key: String
     public let name: String
     public let seconds: Double
+
+    public init(key: String, name: String, seconds: Double) {
+        self.key = key; self.name = name; self.seconds = seconds
+    }
 }
 
 public struct BrowserUpdate: Codable {
