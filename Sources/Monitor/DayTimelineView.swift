@@ -1,130 +1,123 @@
 import SwiftUI
 import MonitorCore
 
+/// Fixed categorical colors for the day trail; slot 3 (yellow) takes dark text.
+enum TrailPalette {
+    static let slots: [Color] = [
+        Color(red: 0.165, green: 0.471, blue: 0.839), Color(red: 0.922, green: 0.408, blue: 0.204),
+        Color(red: 0.106, green: 0.686, blue: 0.478), Color(red: 0.929, green: 0.631, blue: 0.0),
+        Color(red: 0.910, green: 0.482, blue: 0.643), Color(red: 0.0, green: 0.514, blue: 0.0),
+        Color(red: 0.384, green: 0.314, blue: 0.839)
+    ]
+    static let other = Color(red: 0.72, green: 0.74, blue: 0.72)
+    static let line = Color(red: 0.89, green: 0.89, blue: 0.87)
+    static func color(_ slot: Int?) -> Color { slot.map { slots[$0 % slots.count] } ?? other }
+    static func text(_ slot: Int?) -> Color { slot == 3 ? Color(white: 0.05) : .white }
+}
+
 struct DayTimelineView: View {
     @EnvironmentObject private var model: MonitorModel
-    @State private var hoursPerLane = 4
-    @State private var selected: ActivitySlice?
-    @State private var showRecords = false
+    @State private var expanded: Set<Date> = []
+    @State private var highlighted: Date?
 
     private var report: DayTimelineReport {
-        DayTimelineReport(date: model.selectedDate, calendar: model.reportCalendar,
-                          sessions: model.dailyActivities, hoursPerLane: hoursPerLane)
+        DayTimelineReport(date: model.selectedDate, calendar: model.reportCalendar, activities: model.dailyActivities)
     }
 
     var body: some View {
         let report = report
-        VStack(alignment: .leading, spacing: 24) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("FOLLOW YOUR DAY").font(.system(size: 10, weight: .semibold)).tracking(2).foregroundStyle(Palette.muted)
-                Text("一天，沿着时间展开。").font(.system(size: 30, weight: .semibold))
-                Text("图标就是当时的应用，轨迹的长度就是停留的时间。")
-                    .font(.system(size: 12)).foregroundStyle(Palette.muted)
-            }
-            ReportPicker(dayOnly: true)
-            VStack(alignment: .leading, spacing: 20) {
-                HStack {
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text("一日轨迹").font(.system(size: 18, weight: .semibold))
-                        Text("\(durationText(report.seconds)) 已记录 · \(report.sessions.count) 段使用")
-                            .font(.system(size: 11)).foregroundStyle(Palette.muted)
-                    }
-                    Spacer()
-                    Picker("轨迹刻度", selection: $hoursPerLane) {
-                        Text("4 小时 / 行").tag(4)
-                        Text("2 小时 / 行").tag(2)
-                    }.labelsHidden().pickerStyle(.segmented).frame(width: 205)
+        ScrollViewReader { proxy in
+            VStack(alignment: .leading, spacing: 24) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("FOLLOW YOUR DAY").font(.system(size: 10, weight: .semibold)).tracking(2).foregroundStyle(Palette.muted)
+                    Text("这一天，你都在做什么。").font(.system(size: 30, weight: .semibold))
+                    Text("按使用习惯自动分成若干时段，离开 10 分钟以上会单独标出。")
+                        .font(.system(size: 12)).foregroundStyle(Palette.muted)
                 }
-                selectionStrip
-                HStack(spacing: 14) {
-                    Label("点击图标或色块查看详情", systemImage: "cursorarrow.rays")
-                    Spacer()
-                    HStack(spacing: 5) {
-                        RoundedRectangle(cornerRadius: 3).fill(Palette.background).frame(width: 15, height: 9)
-                        Text("未记录")
-                    }
-                }.font(.system(size: 10)).foregroundStyle(Palette.muted)
-                VStack(spacing: 16) {
-                    ForEach(report.lanes) { lane in
-                        if lane.empty {
-                            HStack {
-                                Text("\(time(lane.interval.start)) — \(time(lane.interval.end, end: true))")
-                                    .monospacedDigit()
-                                Rectangle().fill(Palette.muted.opacity(0.15)).frame(height: 1)
-                                Text("未记录")
-                            }.font(.system(size: 11)).foregroundStyle(Palette.muted).padding(.vertical, 9)
-                        } else {
-                            TimelineLaneView(lane: lane, calendar: model.reportCalendar, selectedID: selected?.id) {
-                                selected = $0
+                ReportPicker(dayOnly: true)
+                if report.segments.isEmpty {
+                    Text("这一天还没有应用记录。让 Monitor 保持运行，新的足迹会显示在这里。")
+                        .font(.system(size: 12)).foregroundStyle(Palette.muted)
+                        .frame(maxWidth: .infinity, alignment: .leading).padding(24)
+                        .background(.white, in: RoundedRectangle(cornerRadius: 16))
+                } else {
+                    summary(report)
+                    VStack(alignment: .leading, spacing: 14) {
+                        Text("全天概览").font(.system(size: 13, weight: .semibold))
+                        DayOverviewChart(report: report, calendar: model.reportCalendar, highlighted: $highlighted) { id in
+                            expanded.insert(id)
+                            withAnimation(.easeInOut(duration: 0.25)) { proxy.scrollTo(id, anchor: .center) }
+                        }
+                        HStack(spacing: 18) {
+                            Text("上：自动划分的时段，颜色为该时段的主要应用")
+                            Text("下：主要应用各占一行，每一小段是一次实际使用")
+                            Text("斜纹：离开")
+                        }.font(.system(size: 10)).foregroundStyle(Palette.muted)
+                    }.padding(20).background(.white, in: RoundedRectangle(cornerRadius: 16))
+                    VStack(spacing: 0) {
+                        ForEach(report.blocks) { block in
+                            switch block {
+                            case .away(let away): awayRow(away)
+                            case .segment(let segment):
+                                SegmentRow(segment: segment, colors: report.colors, calendar: model.reportCalendar,
+                                           expanded: expanded.contains(segment.id), highlighted: highlighted == segment.id,
+                                           toggle: { toggle(segment.id) },
+                                           hover: { highlighted = $0 ? segment.id : (highlighted == segment.id ? nil : highlighted) },
+                                           open: { app in
+                                               model.period = .day
+                                               model.showApplication(ActivityIdentity(key: app.key, name: app.name))
+                                           }).id(segment.id)
                             }
                         }
                     }
-                }
-                if report.sessions.isEmpty {
-                    Text("这一天还没有应用记录。让 Monitor 保持运行，新的足迹会显示在这里。")
-                        .font(.system(size: 12)).foregroundStyle(Palette.muted).padding(.vertical, 16)
                 }
                 if report.elapsedEnd < report.interval.end {
                     Label("截至 \(time(report.elapsedEnd)) · 后续时间尚未发生", systemImage: "clock")
                         .font(.system(size: 10)).foregroundStyle(Palette.muted)
                 }
-                Text("空白仅表示没有记录，可能是休眠、锁屏、暂停或应用未运行。网站停留包含在 Chrome 应用时长内。")
+                Text("时段是为了便于阅读的自动划分，不改变原始记录，时长统计仍按实际记录计算。网站停留包含在 Chrome 应用时长内。")
                     .font(.system(size: 10)).foregroundStyle(Palette.muted)
-            }.padding(24).background(.white, in: RoundedRectangle(cornerRadius: 16))
-            DisclosureGroup(isExpanded: $showRecords) {
-                LazyVStack(spacing: 0) {
-                    ForEach(report.sessions) { session in
-                        Button { selected = session } label: {
-                            HStack(spacing: 12) {
-                                Text("\(time(session.start)) – \(time(session.end, end: true))")
-                                    .font(.system(size: 11, design: .monospaced)).foregroundStyle(Palette.muted)
-                                ActivityIcon(key: session.key, kind: .application).frame(width: 25, height: 25)
-                                Text(session.name).font(.system(size: 12))
-                                Spacer()
-                                Text(durationText(session.seconds)).font(.system(size: 11)).foregroundStyle(Palette.muted)
-                            }.padding(.vertical, 10).contentShape(Rectangle())
-                        }.buttonStyle(.plain)
-                        Divider().opacity(0.4)
-                    }
-                }.padding(.top, 12)
-            } label: { Text("逐段记录 · \(report.sessions.count) 段").font(.system(size: 13, weight: .medium)) }
-                .tint(Palette.green).padding(20).background(.white, in: RoundedRectangle(cornerRadius: 14))
+            }
         }
-        .onChange(of: model.selectedDate) { _, _ in selected = nil }
-        .onChange(of: model.reportTimeZone) { _, _ in selected = nil }
-        .onChange(of: model.dailyActivities.map(\.id)) { _, ids in
-            if let selected, !ids.contains(selected.id) { self.selected = nil }
+        .onChange(of: model.selectedDate) { _, _ in expanded = []; highlighted = nil }
+        .onChange(of: model.reportTimeZone) { _, _ in expanded = []; highlighted = nil }
+    }
+
+    private func toggle(_ id: Date) {
+        if expanded.contains(id) { expanded.remove(id) } else { expanded.insert(id) }
+    }
+
+    private func summary(_ report: DayTimelineReport) -> some View {
+        HStack(spacing: 28) {
+            stat(durationText(report.seconds), "活跃")
+            if let first = report.firstActivity, let last = report.lastActivity {
+                stat("\(time(first)) – \(time(last, end: true))", "首末活动")
+            }
+            stat("\(report.segments.count)", "个时段")
+            stat("\(report.awayCount)", "次离开")
+            stat("\(report.switches)", "次切换")
+            Spacer(minLength: 0)
         }
     }
 
-    @ViewBuilder private var selectionStrip: some View {
-        // Use the refreshed slice for an ongoing session rather than freezing its initial duration.
-        let current = selected.flatMap { chosen in model.dailyActivities.first { $0.id == chosen.id } }
-        HStack(spacing: 12) {
-            if let session = current {
-                ActivityIcon(key: session.key, kind: .application).frame(width: 34, height: 34)
-                VStack(alignment: .leading, spacing: 5) {
-                    Text(session.name).font(.system(size: 14, weight: .semibold))
-                    Text("\(time(session.start)) – \(time(session.end, end: true)) · \(durationText(session.seconds))")
-                        .font(.system(size: 11)).foregroundStyle(Palette.muted)
-                }
-                Spacer(minLength: 6)
-                Button {
-                    model.period = .day
-                    model.showApplication(ActivityIdentity(key: session.key, name: session.name))
-                } label: { Label("查看该应用", systemImage: "arrow.up.right").font(.system(size: 11, weight: .medium)) }
-                    .buttonStyle(.plain).foregroundStyle(Palette.green)
-            } else {
-                Image(systemName: "point.topleft.down.curvedto.point.bottomright.up").font(.system(size: 24)).foregroundStyle(Palette.green)
-                VStack(alignment: .leading, spacing: 5) {
-                    Text("从一段足迹开始").font(.system(size: 14, weight: .medium))
-                    Text("选中一段，查看当时的应用与准确时间。Chrome 可继续展开网页明细。")
-                        .font(.system(size: 11)).foregroundStyle(Palette.muted)
-                }
-                Spacer(minLength: 0)
-            }
-        }.padding(16).frame(minHeight: 66)
-            .background(Palette.green.opacity(0.055), in: RoundedRectangle(cornerRadius: 12))
+    private func stat(_ value: String, _ label: String) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(value).font(.system(size: 17, weight: .semibold)).monospacedDigit()
+            Text(label).font(.system(size: 10)).foregroundStyle(Palette.muted)
+        }
+    }
+
+    private func awayRow(_ away: DaySegmenter.Away) -> some View {
+        HStack(spacing: 14) {
+            Text("\(time(away.start)) – \(time(away.end, end: true))")
+                .font(.system(size: 11, design: .monospaced)).foregroundStyle(Palette.muted)
+                .frame(width: SegmentRow.timeWidth, alignment: .trailing)
+            HStack(spacing: 10) {
+                DashedLine().frame(width: 16)
+                Text("离开 \(durationText(away.seconds))" + (away.briefSeconds > 0 ? "（中途短暂使用 \(durationText(away.briefSeconds))）" : ""))
+                DashedLine()
+            }.font(.system(size: 11)).foregroundStyle(Palette.muted)
+        }.padding(.vertical, 6)
     }
 
     private func time(_ date: Date, end: Bool = false) -> String {
@@ -133,135 +126,366 @@ struct DayTimelineView: View {
     }
 }
 
-private struct TimelineLaneView: View {
-    let lane: TimelineLane
-    let calendar: Calendar
-    let selectedID: Int64?
-    let choose: (ActivitySlice) -> Void
-    @State private var expandedCluster: Date?
-
+private struct DashedLine: View {
     var body: some View {
-        GeometryReader { geometry in
-            let width = geometry.size.width
-            let clusters = iconClusters(width: width)
-            ZStack(alignment: .topLeading) {
-                let recordedWidth = position(lane.segments.last?.end ?? lane.interval.start, width: width)
-                RoundedRectangle(cornerRadius: 9).fill(Palette.background)
-                    .frame(width: recordedWidth, height: 48).offset(y: 43)
-                if width - recordedWidth > 60 {
-                    Text("尚未发生").font(.system(size: 10)).foregroundStyle(Palette.muted.opacity(0.55))
-                        .frame(width: width - recordedWidth, height: 48).offset(x: recordedWidth, y: 43)
-                }
-                ForEach(lane.segments) { segment in
-                    let x = position(segment.start, width: width)
-                    let span = position(segment.end, width: width) - x
-                    if let app = segment.activity {
-                        Button { choose(app) } label: {
-                            HStack(spacing: 7) {
-                                if span >= 42 { ActivityIcon(key: app.key, kind: .application).frame(width: 26, height: 26) }
-                                if span >= 132 {
-                                    VStack(alignment: .leading, spacing: 3) {
-                                        Text(app.name).font(.system(size: 11, weight: .medium)).lineLimit(1)
-                                        Text(durationText(segment.seconds)).font(.system(size: 9)).foregroundStyle(Palette.muted).lineLimit(1)
-                                    }
-                                }
-                            }.padding(.horizontal, span >= 42 ? 8 : 0)
-                                .frame(width: max(1, span - (span > 5 ? 2 : 0)), height: 48)
-                                .background(color(app.key).opacity(selectedID == app.id ? 0.32 : 0.16), in: RoundedRectangle(cornerRadius: span > 16 ? 8 : 1))
-                                .overlay(RoundedRectangle(cornerRadius: span > 16 ? 8 : 1)
-                                    .strokeBorder(selectedID == app.id ? color(app.key) : .clear, lineWidth: 1.5))
-                                .clipped().contentShape(Rectangle())
-                        }.buttonStyle(.plain).offset(x: x, y: 43)
-                            .help("\(app.name) · \(timelineTime(segment.start, calendar: calendar)) – \(timelineTime(segment.end, calendar: calendar)) · \(durationText(segment.seconds))")
-                            .accessibilityLabel("\(app.name)，\(durationText(segment.seconds))")
-                    } else if span > 65 {
-                        Text("未记录").font(.system(size: 10)).foregroundStyle(Palette.muted.opacity(0.75))
-                            .frame(width: span, height: 48).offset(x: x, y: 43)
-                    }
-                }
-                ForEach(clusters) { cluster in
-                    let center = min(width - 20, max(20, cluster.center))
-                    Path { path in
-                        path.move(to: CGPoint(x: center, y: 31))
-                        path.addLine(to: CGPoint(x: cluster.center, y: 43))
-                    }.stroke(Palette.muted.opacity(0.45), lineWidth: 1)
-                    Button {
-                        if cluster.activities.count == 1 { choose(cluster.activities[0]) }
-                        else { expandedCluster = cluster.id }
-                    } label: {
-                        HStack(spacing: 2) {
-                            ActivityIcon(key: cluster.activities[0].key, kind: .application).frame(width: 24, height: 24)
-                            if cluster.activities.count > 1 {
-                                Text("\(cluster.activities.count)").font(.system(size: 9, weight: .semibold)).foregroundStyle(Palette.green)
-                            }
-                        }.padding(3).background(.white, in: RoundedRectangle(cornerRadius: 7))
-                            .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(Palette.green.opacity(0.15)))
-                    }.buttonStyle(.plain).position(x: center, y: 17)
-                        .help(cluster.activities.count == 1 ? cluster.activities[0].name : "展开 \(cluster.activities.count) 次短时切换")
-                        .popover(isPresented: Binding(get: { expandedCluster == cluster.id }, set: { if !$0 { expandedCluster = nil } })) {
-                            ScrollView {
-                                VStack(alignment: .leading, spacing: 10) {
-                                    Text("这里的短时切换").font(.headline)
-                                    ForEach(cluster.activities) { app in
-                                        Button { choose(app); expandedCluster = nil } label: {
-                                            HStack(spacing: 10) {
-                                                ActivityIcon(key: app.key, kind: .application).frame(width: 25, height: 25)
-                                                VStack(alignment: .leading, spacing: 4) {
-                                                    Text(app.name).font(.system(size: 12, weight: .medium))
-                                                    Text("\(timelineTime(app.start, calendar: calendar)) · \(durationText(app.seconds))")
-                                                        .font(.system(size: 10)).foregroundStyle(Palette.muted)
-                                                }
-                                                Spacer()
-                                            }.padding(6).contentShape(Rectangle())
-                                        }.buttonStyle(.plain)
-                                    }
-                                }.padding(16)
-                            }.scrollIndicators(.hidden).frame(width: 280, height: min(360, CGFloat(cluster.activities.count) * 58 + 60))
-                        }
-                }
-                HStack {
-                    Text(timelineTime(lane.interval.start, calendar: calendar))
-                    Spacer()
-                    Text(timelineTime(lane.interval.start.addingTimeInterval(lane.interval.duration / 2), calendar: calendar))
-                    Spacer()
-                    Text(lane.interval.end == calendar.startOfDay(for: lane.interval.end) ? "24:00" : timelineTime(lane.interval.end, calendar: calendar))
-                }.font(.system(size: 10, design: .monospaced)).foregroundStyle(Palette.muted).offset(y: 102)
-            }
-        }.frame(height: 118)
-    }
-
-    private struct IconCluster: Identifiable {
-        let id: Date
-        var center: CGFloat
-        var activities: [ActivitySlice]
-    }
-
-    private func iconClusters(width: CGFloat) -> [IconCluster] {
-        var result: [IconCluster] = []
-        for segment in lane.segments {
-            guard let app = segment.activity else { continue }
-            let x = position(segment.start, width: width), end = position(segment.end, width: width)
-            guard end - x < 42 else { continue }
-            let center = (x + end) / 2
-            if let last = result.last, center - last.center < 48 {
-                let count = CGFloat(last.activities.count)
-                result[result.count - 1].center = (last.center * count + center) / (count + 1)
-                result[result.count - 1].activities.append(app)
-            } else { result.append(IconCluster(id: segment.start, center: center, activities: [app])) }
-        }
-        return result
-    }
-    private func position(_ date: Date, width: CGFloat) -> CGFloat {
-        width * date.timeIntervalSince(lane.interval.start) / max(1, lane.interval.duration)
-    }
-    private func color(_ key: String) -> Color {
-        let colors = [Palette.green, Color(red: 0.30, green: 0.48, blue: 0.64), Palette.orange,
-                      Color(red: 0.49, green: 0.43, blue: 0.64), Color(red: 0.48, green: 0.54, blue: 0.32)]
-        return colors[key.utf8.reduce(0) { ($0 * 31 + Int($1)) % colors.count }]
+        GeometryReader { g in
+            Path { p in p.move(to: CGPoint(x: 0, y: 0.5)); p.addLine(to: CGPoint(x: g.size.width, y: 0.5)) }
+                .stroke(Palette.muted.opacity(0.4), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
+        }.frame(height: 1)
     }
 }
 
-private func timelineTime(_ date: Date, calendar: Calendar) -> String {
+private struct Hatch: View {
+    var body: some View {
+        Canvas { context, size in
+            var path = Path()
+            var x: CGFloat = -size.height
+            while x < size.width {
+                path.move(to: CGPoint(x: x, y: size.height)); path.addLine(to: CGPoint(x: x + size.height, y: 0))
+                x += 6
+            }
+            context.stroke(path, with: .color(Palette.muted.opacity(0.22)), lineWidth: 2)
+        }.clipShape(RoundedRectangle(cornerRadius: 4))
+    }
+}
+
+// MARK: - Overview
+
+private struct DayOverviewChart: View {
+    let report: DayTimelineReport
+    let calendar: Calendar
+    @Binding var highlighted: Date?
+    let select: (Date) -> Void
+    @State private var hover: CGFloat?
+
+    private let labelWidth: CGFloat = 110
+    private let bandHeight: CGFloat = 34
+    private let laneHeight: CGFloat = 14
+    private let laneSpacing: CGFloat = 6
+    private let axisHeight: CGFloat = 18
+
+    private var lanesTop: CGFloat { bandHeight + 12 }
+    private var plotHeight: CGFloat { lanesTop + CGFloat(report.lanes.count) * (laneHeight + laneSpacing) }
+
+    var body: some View {
+        GeometryReader { geometry in
+            let width = max(1, geometry.size.width - labelWidth)
+            ZStack(alignment: .topLeading) {
+                grid(width: width)
+                Text("时段").font(.system(size: 11)).foregroundStyle(Palette.muted)
+                    .frame(width: labelWidth, height: bandHeight, alignment: .leading)
+                ForEach(report.blocks) { block in band(block, width: width) }
+                ForEach(Array(report.lanes.enumerated()), id: \.element.id) { index, lane in
+                    let y = lanesTop + CGFloat(index) * (laneHeight + laneSpacing)
+                    HStack(spacing: 6) {
+                        RoundedRectangle(cornerRadius: 2).fill(laneColor(lane)).frame(width: 8, height: 8)
+                        Text(lane.name).font(.system(size: 11)).lineLimit(1).truncationMode(.tail)
+                    }.frame(width: labelWidth - 8, height: laneHeight, alignment: .leading).offset(y: y)
+                    Canvas { context, size in
+                        for run in lane.runs {
+                            let a = x(run.start, width: width), b = x(run.end, width: width)
+                            let color = lane.key == nil ? TrailPalette.color(report.colors[run.key]) : laneColor(lane)
+                            context.fill(Path(roundedRect: CGRect(x: a, y: 2, width: max(1, b - a), height: size.height - 4), cornerRadius: 1.5),
+                                         with: .color(color))
+                        }
+                        context.fill(Path(CGRect(x: 0, y: size.height - 0.5, width: size.width, height: 0.5)), with: .color(TrailPalette.line))
+                    }.frame(width: width, height: laneHeight).offset(x: labelWidth, y: y)
+                }
+                axis(width: width)
+                if let hover { crosshair(at: hover, width: width) }
+            }
+            .contentShape(Rectangle())
+            .onContinuousHover { phase in
+                switch phase {
+                case .active(let point) where point.x >= labelWidth && point.x <= labelWidth + width:
+                    hover = point.x - labelWidth
+                    let date = date(at: point.x - labelWidth, width: width)
+                    highlighted = report.block(at: date)?.segment?.id
+                default:
+                    if hover != nil { highlighted = nil }
+                    hover = nil
+                }
+            }
+        }.frame(height: plotHeight + axisHeight)
+    }
+
+    @ViewBuilder private func band(_ block: DaySegmenter.Block, width: CGFloat) -> some View {
+        let a = x(block.start, width: width), w = max(2, x(block.end, width: width) - a)
+        switch block {
+        case .away(let away):
+            Hatch().overlay {
+                if w > 40 { Text("离开").font(.system(size: 10)).foregroundStyle(Palette.muted) }
+            }.frame(width: w, height: bandHeight - 8).offset(x: labelWidth + a, y: 4)
+                .help("离开 \(durationText(away.seconds))")
+        case .segment(let segment):
+            let slot = segment.apps.first.flatMap { report.colors[$0.key] }
+            let dimmed = highlighted != nil && highlighted != segment.id
+            Button { select(segment.id) } label: {
+                Text(w > 60 ? (segment.apps.first?.name ?? "") : "")
+                    .font(.system(size: 11, weight: .semibold)).foregroundStyle(TrailPalette.text(slot)).lineLimit(1)
+                    .padding(.horizontal, 6).frame(width: max(2, w - 2), height: bandHeight, alignment: .leading)
+                    .background(TrailPalette.color(slot), in: RoundedRectangle(cornerRadius: 4))
+                    .opacity(dimmed ? 0.35 : 1).contentShape(Rectangle())
+            }.buttonStyle(.plain).offset(x: labelWidth + a, y: 0)
+                .accessibilityLabel("\(DayTimelineReport.title(segment))，\(durationText(segment.span))")
+        }
+    }
+
+    private func grid(width: CGFloat) -> some View {
+        Canvas { context, size in
+            for hour in hours() {
+                let px = labelWidth + x(hour, width: width)
+                context.fill(Path(CGRect(x: px, y: 0, width: 0.5, height: plotHeight)), with: .color(TrailPalette.line))
+            }
+        }.frame(height: plotHeight).allowsHitTesting(false)
+    }
+
+    private func axis(width: CGFloat) -> some View {
+        let all = hours()
+        let step = all.count > 13 ? 2 : 1
+        return ZStack(alignment: .topLeading) {
+            ForEach(Array(all.enumerated()), id: \.offset) { index, hour in
+                if index % step == 0 {
+                    Text(hourLabel(hour)).font(.system(size: 10, design: .monospaced)).foregroundStyle(Palette.muted)
+                        .fixedSize().position(x: labelWidth + x(hour, width: width), y: axisHeight / 2)
+                }
+            }
+        }.frame(height: axisHeight).offset(y: plotHeight)
+    }
+
+    private func crosshair(at px: CGFloat, width: CGFloat) -> some View {
+        let date = date(at: px, width: width)
+        let app = report.application(at: date)
+        let block = report.block(at: date)
+        let tipWidth: CGFloat = 210
+        let left = labelWidth + px + 12 + tipWidth > labelWidth + width ? labelWidth + px - tipWidth - 12 : labelWidth + px + 12
+        return ZStack(alignment: .topLeading) {
+            Rectangle().fill(Palette.ink.opacity(0.55)).frame(width: 1, height: plotHeight).offset(x: labelWidth + px)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(timelineTime(date, calendar: calendar)).font(.system(size: 10, design: .monospaced)).foregroundStyle(Palette.muted)
+                if let app {
+                    HStack(spacing: 6) {
+                        RoundedRectangle(cornerRadius: 2).fill(TrailPalette.color(report.colors[app.key])).frame(width: 8, height: 8)
+                        Text(app.name).font(.system(size: 12, weight: .medium))
+                    }
+                } else {
+                    Text(block?.segment == nil && block != nil ? "离开" : "无记录").font(.system(size: 12)).foregroundStyle(Palette.muted)
+                }
+                if let block {
+                    Text(blockCaption(block)).font(.system(size: 10)).foregroundStyle(Palette.muted).lineLimit(2)
+                }
+            }.padding(10).frame(width: tipWidth, alignment: .leading)
+                .background(.white, in: RoundedRectangle(cornerRadius: 8))
+                .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(TrailPalette.line))
+                .shadow(color: .black.opacity(0.08), radius: 8, y: 3)
+                .offset(x: max(0, left), y: lanesTop)
+        }.allowsHitTesting(false)
+    }
+
+    private func blockCaption(_ block: DaySegmenter.Block) -> String {
+        let range = "\(timelineTime(block.start, calendar: calendar))–\(timelineTime(block.end, calendar: calendar))"
+        switch block {
+        case .segment(let segment): return "所在时段：\(DayTimelineReport.title(segment)) · \(range)"
+        case .away(let away): return "离开 \(durationText(away.seconds)) · \(range)"
+        }
+    }
+
+    private func hours() -> [Date] {
+        var result: [Date] = []
+        var cursor = report.range.start
+        while cursor <= report.range.end {
+            result.append(cursor)
+            guard let next = calendar.date(byAdding: .hour, value: 1, to: cursor), next > cursor else { break }
+            cursor = next
+        }
+        return result
+    }
+
+    private func hourLabel(_ date: Date) -> String {
+        if date == report.interval.end { return "24" }
+        return String(format: "%02d", calendar.component(.hour, from: date))
+    }
+
+    private func laneColor(_ lane: DayTimelineLane) -> Color {
+        lane.key.map { TrailPalette.color(report.colors[$0]) } ?? TrailPalette.other
+    }
+    private func x(_ date: Date, width: CGFloat) -> CGFloat {
+        width * date.timeIntervalSince(report.range.start) / max(1, report.range.duration)
+    }
+    private func date(at px: CGFloat, width: CGFloat) -> Date {
+        report.range.start.addingTimeInterval(report.range.duration * Double(px / width))
+    }
+}
+
+// MARK: - Period list
+
+private struct SegmentRow: View {
+    static let timeWidth: CGFloat = 112
+
+    let segment: DaySegmenter.Segment
+    let colors: [String: Int]
+    let calendar: Calendar
+    let expanded: Bool
+    let highlighted: Bool
+    let toggle: () -> Void
+    let hover: (Bool) -> Void
+    let open: (DaySegmenter.Share) -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 14) {
+            VStack(alignment: .trailing, spacing: 3) {
+                Text("\(t(segment.start)) – \(t(segment.end))").font(.system(size: 11, design: .monospaced))
+                Text(durationText(segment.span)).font(.system(size: 10)).foregroundStyle(Palette.muted)
+            }.frame(width: Self.timeWidth, alignment: .trailing).padding(.top, 16)
+            VStack(alignment: .leading, spacing: 10) {
+                header
+                composition
+                legend
+                if !segment.websites.isEmpty {
+                    Text("Chrome 里主要在看：" + segment.websites.prefix(4).map { "\($0.name) \(durationText($0.seconds))" }.joined(separator: "、"))
+                        .font(.system(size: 11)).foregroundStyle(Palette.muted).lineLimit(2)
+                }
+                if expanded { detail }
+            }
+            .padding(14)
+            .background(.white, in: RoundedRectangle(cornerRadius: 12))
+            .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(highlighted ? Palette.green.opacity(0.45) : TrailPalette.line, lineWidth: highlighted ? 1.5 : 1))
+            .contentShape(RoundedRectangle(cornerRadius: 12))
+            .onTapGesture(perform: toggle)
+            .onHover(perform: hover)
+            .accessibilityElement(children: .contain)
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAction(named: expanded ? "收起" : "展开", toggle)
+        }.padding(.vertical, 5)
+    }
+
+    private var header: some View {
+        HStack(spacing: 10) {
+            if let lead = segment.apps.first {
+                ActivityIcon(key: lead.key, kind: .application).frame(width: 26, height: 26)
+            }
+            Text(DayTimelineReport.title(segment)).font(.system(size: 14, weight: .semibold)).lineLimit(1)
+            focusChip
+            Spacer(minLength: 8)
+            Text("活跃 \(durationText(segment.activeSeconds)) · 切换 \(segment.switches) 次")
+                .font(.system(size: 11)).foregroundStyle(Palette.muted).monospacedDigit()
+            Image(systemName: expanded ? "chevron.up" : "chevron.down").font(.system(size: 10, weight: .semibold)).foregroundStyle(Palette.muted)
+        }
+    }
+
+    private var focusChip: some View {
+        let (label, color): (String, Color) = switch segment.focus {
+        case .focused: ("专注", Color(red: 0.0, green: 0.42, blue: 0.0))
+        case .mixed: ("混合", Color(red: 0.63, green: 0.36, blue: 0.0))
+        case .fragmented: ("碎片", Color(red: 0.69, green: 0.22, blue: 0.18))
+        }
+        return Text(label).font(.system(size: 10, weight: .medium)).foregroundStyle(color)
+            .padding(.horizontal, 7).padding(.vertical, 2)
+            .overlay(Capsule().strokeBorder(color.opacity(0.8)))
+    }
+
+    private var composition: some View {
+        GeometryReader { g in
+            let gaps = CGFloat(max(0, segment.apps.count - 1)) * 2
+            HStack(spacing: 2) {
+                ForEach(segment.apps) { app in
+                    Rectangle().fill(TrailPalette.color(colors[app.key]))
+                        .frame(width: max(1, (g.size.width - gaps) * segment.share(of: app)))
+                }
+            }
+        }.frame(height: 8).clipShape(RoundedRectangle(cornerRadius: 4))
+    }
+
+    private var legend: some View {
+        let shown = segment.apps.prefix(4).filter { segment.share(of: $0) >= 0.01 }
+        let rest = 1 - shown.reduce(0) { $0 + segment.share(of: $1) }
+        return HStack(spacing: 14) {
+            ForEach(shown) { app in
+                HStack(spacing: 5) {
+                    RoundedRectangle(cornerRadius: 2).fill(TrailPalette.color(colors[app.key])).frame(width: 8, height: 8)
+                    Text(app.name).font(.system(size: 12, weight: .medium)).lineLimit(1)
+                    Text(percent(segment.share(of: app))).font(.system(size: 11)).foregroundStyle(Palette.muted).monospacedDigit()
+                }
+            }
+            if rest >= 0.005 {
+                Text("其他 \(percent(rest))").font(.system(size: 11)).foregroundStyle(Palette.muted)
+            }
+        }
+    }
+
+    private var detail: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Divider().opacity(0.5)
+            Canvas { context, size in
+                context.fill(Path(roundedRect: CGRect(origin: .zero, size: size), cornerRadius: 3), with: .color(Palette.background))
+                let span = max(1, segment.span)
+                for run in segment.runs {
+                    let a = size.width * run.start.timeIntervalSince(segment.start) / span
+                    let b = size.width * run.end.timeIntervalSince(segment.start) / span
+                    context.fill(Path(CGRect(x: a, y: 0, width: max(1, b - a), height: size.height)),
+                                 with: .color(TrailPalette.color(colors[run.key])))
+                }
+            }.frame(height: 14)
+            VStack(alignment: .leading, spacing: 4) {
+                ForEach(rows) { row in
+                    HStack(spacing: 10) {
+                        Text(t(row.start)).font(.system(size: 11, design: .monospaced)).foregroundStyle(Palette.muted)
+                            .frame(width: 42, alignment: .leading)
+                        if let key = row.key {
+                            RoundedRectangle(cornerRadius: 2).fill(TrailPalette.color(colors[key])).frame(width: 8, height: 8)
+                        } else { Color.clear.frame(width: 8, height: 8) }
+                        Text(row.label).font(.system(size: 12)).foregroundStyle(row.key == nil ? Palette.muted : Palette.ink).lineLimit(1)
+                        Spacer(minLength: 8)
+                        Text(durationText(row.seconds)).font(.system(size: 11)).foregroundStyle(Palette.muted).monospacedDigit()
+                    }
+                }
+            }
+            HStack(spacing: 16) {
+                ForEach(segment.apps.prefix(3)) { app in
+                    Button { open(app) } label: {
+                        Label("查看 \(app.name)", systemImage: "arrow.up.right").font(.system(size: 11, weight: .medium))
+                    }.buttonStyle(.plain).foregroundStyle(Palette.green)
+                }
+            }
+        }
+    }
+
+    private struct Row: Identifiable {
+        let start: Date
+        let key: String?
+        let label: String
+        let seconds: Double
+        var id: Date { start }
+    }
+
+    /// Uses of a minute or more are listed one by one; consecutive shorter switches collapse into one line.
+    private var rows: [Row] {
+        var result: [Row] = []
+        var buffer: [ActivitySlice] = []
+        func flush() {
+            guard let first = buffer.first else { return }
+            var counts: [String: Int] = [:]
+            var order: [String] = []
+            for run in buffer { if counts[run.name] == nil { order.append(run.name) }; counts[run.name, default: 0] += 1 }
+            let names = order.sorted { counts[$0]! > counts[$1]! }.map { counts[$0]! > 1 ? "\($0) ×\(counts[$0]!)" : $0 }
+            result.append(Row(start: first.start, key: nil, label: "\(buffer.count) 次短暂切换（\(names.joined(separator: "、"))）",
+                              seconds: buffer.reduce(0) { $0 + $1.seconds }))
+            buffer = []
+        }
+        for run in segment.runs {
+            if run.seconds < 60 { buffer.append(run); continue }
+            flush()
+            result.append(Row(start: run.start, key: run.key, label: run.name, seconds: run.seconds))
+        }
+        flush()
+        return result
+    }
+
+    private func percent(_ value: Double) -> String { "\(Int((value * 100).rounded()))%" }
+    private func t(_ date: Date) -> String { timelineTime(date, calendar: calendar) }
+}
+
+func timelineTime(_ date: Date, calendar: Calendar) -> String {
     date.formatted(Date.FormatStyle(locale: Locale(identifier: "zh_CN"), calendar: calendar, timeZone: calendar.timeZone)
         .hour(.twoDigits(amPM: .omitted)).minute(.twoDigits))
 }
