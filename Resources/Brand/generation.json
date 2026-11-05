@@ -1,0 +1,12 @@
+{
+  "tool": "Built-in image_gen",
+  "concept": "A — camera-lens hair clip mecha girl",
+  "source": "app-icon-source.png",
+  "export": "app-icon.png",
+  "reference": "Approved A concept from this conversation",
+  "prompts": [
+    "Use case: logo-brand, edit existing approved concept A into the final macOS app icon for Monitor. Preserve this exact charming girl identity: forest-green short bob hair, green anime eyes, cream mechanical ear covers, large circular cream-and-orange camera-lens hair clip at upper right, blush and small smile. Remove ALL typography, labels, presentation-board background and white border. Output a single centered square application icon: pale sage rounded-square tile with smoothly rounded macOS-style corners, tiny subtle dimensional shading, girl head and minimal cream collar filling most of tile, fully contained within tile. Outside the rounded-square tile is genuinely transparent. Tile occupies about 88 percent of square canvas with even transparent margins. Simplify hair strands and collar slightly for icon readability while preserving the illustration's appeal. Head dominates, no arms, no additional objects. Maintain original forest green, cream, apricot palette. Crisp polished clean lines, no lettering, no watermarks. This is the actual icon asset, not a mockup, no surrounding sheet.",
+    "Precise cleanup of this finished application icon. Keep the girl's illustration, face, camera lens accessory, colors, pose and square sage tile unchanged. Fix ONLY the tile boundary and transparency: remove every stray pixel, fleck, white speck and green fringe outside the rounded square. Make the tile a geometrically clean rounded square centered on the canvas with exactly equal transparent margins on all four sides, 8 percent each. Use a clean crisp antialiased edge with no ragged cutout, no outer shadow and no speckle. Outside is perfectly empty alpha transparency. Do not add text or change the character. This is production app icon artwork."
+  ],
+  "exportNote": "App icon masked to clean rounded-square bounds by scripts/make-icon.swift. Small-size vector companion and animation frames are drawn by MascotArtwork.swift."
+}

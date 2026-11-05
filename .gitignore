@@ -1,0 +1,15 @@
+.build/
+.swiftpm/
+dist/
+.DS_Store
+*.sqlite*
+
+# Local configuration, pairing credentials and generated exports
+.env
+.env.*
+!.env.example
+pairing-token
+*.log
+node_modules/
+*.xcuserstate
+xcuserdata/

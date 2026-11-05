@@ -1,0 +1,30 @@
+{
+  "manifest_version": 3,
+  "name": "Monitor · 时间足迹",
+  "version": "0.3.0",
+  "minimum_chrome_version": "120",
+  "description": "记录当前前台网页的标题、地址和停留时间。只连接本机 Monitor，所有记录保存在你的 Mac。",
+  "permissions": ["tabs", "storage", "alarms"],
+  "host_permissions": ["http://127.0.0.1/*"],
+  "incognito": "not_allowed",
+  "background": { "service_worker": "background.js", "type": "module" },
+  "icons": {
+    "16": "icons/monitor-16.png",
+    "32": "icons/monitor-32.png",
+    "48": "icons/monitor-48.png",
+    "128": "icons/monitor-128.png"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Monitor · 时间足迹",
+    "default_icon": {
+      "16": "icons/monitor-16.png",
+      "24": "icons/monitor-24.png",
+      "32": "icons/monitor-32.png",
+      "48": "icons/monitor-48.png"
+    }
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; connect-src http://127.0.0.1:47821"
+  }
+}

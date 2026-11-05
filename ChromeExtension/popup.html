@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Monitor · 时间足迹</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body data-motion="off">
+  <header><img class="logo" src="icons/portrait.png" width="44" height="44" alt=""><div><h1>Monitor</h1><p>时间足迹</p></div><span class="local">只存本机</span></header>
+  <main>
+    <p class="eyebrow">A LITTLE MORE AWARE</p>
+    <div class="hero"><h2>让浏览时间，<br>有迹可循。</h2><img id="mascot" src="icons/monitor-waiting-256.png" width="94" height="94" alt="" aria-hidden="true"></div>
+    <section class="status" aria-live="polite">
+      <span id="dot" class="dot"></span>
+      <div><strong id="status-title">正在检查连接…</strong><p id="status-detail">请保持 Mac 上的 Monitor 运行。</p></div>
+    </section>
+    <form id="pair-form">
+      <label for="token">本机配对码</label>
+      <input id="token" type="password" placeholder="从 Monitor「连接与设置」中复制" autocomplete="off" spellcheck="false" minlength="64" maxlength="64" aria-describedby="privacy">
+      <button id="connect" type="submit">连接本机 <span aria-hidden="true">↗</span></button>
+    </form>
+    <div class="actions"><button id="refresh" type="button">重新检查</button><button id="disconnect" type="button" hidden>断开连接</button></div>
+    <label class="motion-option"><input id="motion" type="checkbox"> 打开面板时轻轻打招呼</label>
+    <p id="privacy" class="privacy">前台网页的标题、地址与停留时间仅存本机。<br>地址可能包含搜索词；不读取正文，不记录无痕浏览。</p>
+  </main>
+  <footer><span class="shield" aria-hidden="true">◇</span> 数据留在你的 Mac，时间由你掌控。</footer>
+  <script src="popup.js" type="module"></script>
+</body>
+</html>

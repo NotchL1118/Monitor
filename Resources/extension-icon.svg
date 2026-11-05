@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 128 128">
+  <title>Monitor · 镜头发夹机娘</title>
+  <!-- Static vector preview; exported PNG states use MascotArtwork.swift. -->
+  <g stroke="#143324" stroke-linejoin="round" stroke-linecap="round">
+    <path d="M13 107C4 91 8 63 14 46C19 19 40 10 65 12C96 10 112 27 115 54C122 81 122 95 115 108L98 104L95 117C70 124 47 123 30 117L26 104Z" fill="#335942" stroke-width="4"/>
+    <rect x="25" y="36" width="76" height="77" rx="35" fill="#ffdebd" stroke="none"/>
+    <path d="M22 72L21 37C34 15 78 18 99 35L105 71C89 68 74 56 67 46L77 71C58 72 52 60 47 48C41 64 31 69 22 72Z" fill="#335942" stroke="none"/>
+    <path d="M23 43C29 31 39 26 51 25" fill="none" stroke-width="3"/>
+    <g fill="#fff0d4" stroke-width="2"><rect x="17" y="73" width="10" height="24" rx="5"/><rect x="101" y="73" width="10" height="24" rx="5"/></g>
+    <g fill="#143324" stroke="none"><ellipse cx="43" cy="81.5" rx="4" ry="6.5"/><ellipse cx="79" cy="81.5" rx="4" ry="6.5"/></g>
+    <g fill="#fff0d4" stroke="none"><ellipse cx="42.5" cy="78" rx="1.5" ry="2"/><ellipse cx="78.5" cy="78" rx="1.5" ry="2"/></g>
+    <path d="M56 98C59 103 65 103 68 98" fill="none" stroke-width="2.5"/>
+    <g fill="#f09145" stroke="none"><ellipse cx="35" cy="93.5" rx="6" ry="2.5"/><ellipse cx="90" cy="93.5" rx="6" ry="2.5"/></g>
+    <circle cx="96.5" cy="32.5" r="22.5" fill="#143324" stroke="none"/>
+    <circle cx="96.5" cy="32.5" r="18.5" fill="#fff0d4" stroke="none"/>
+    <circle cx="96.5" cy="32.5" r="13.5" fill="#143324" stroke="none"/>
+    <circle cx="96.5" cy="32.5" r="9.5" fill="#f09145" stroke="none"/>
+    <ellipse cx="92.5" cy="27.5" rx="3.5" ry="2.5" fill="#fff0d4" stroke="none"/>
+  </g>
+</svg>
