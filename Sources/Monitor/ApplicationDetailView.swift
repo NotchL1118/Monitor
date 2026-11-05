@@ -71,6 +71,7 @@ struct ApplicationDetailView: View {
                 VStack(alignment: .leading, spacing: 5) {
                     Text(report.application.name).font(.system(size: 22, weight: .semibold)).lineLimit(2)
                     Text(report.period.label(for: report.interval.start, calendar: calendar)).font(.system(size: 11)).foregroundStyle(Palette.muted)
+                    ApplicationLocationView(bundleIdentifier: report.application.key)
                 }
                 Spacer(minLength: 0)
             }
