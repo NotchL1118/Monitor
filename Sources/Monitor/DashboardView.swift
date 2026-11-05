@@ -31,10 +31,8 @@ struct DashboardView: View {
                         if let error = model.serverError { message(error, symbol: "exclamationmark.triangle", color: Palette.orange) }
                     }.padding(32).id("page-top")
                 }.scrollIndicators(.hidden)
+                    // Only page navigation resets scrolling; switching apps keeps the current position.
                     .onChange(of: model.dashboardPage) { _, _ in proxy.scrollTo("page-top", anchor: .top) }
-                    .onChange(of: model.selectedApplication?.key) { _, _ in
-                        proxy.scrollTo("page-top", anchor: .top)
-                    }
             }
         }
         .background(Palette.background)
@@ -115,6 +113,7 @@ struct DashboardView: View {
                 Spacer()
                 Button { model.exportReport() } label: { Label("导出所选时段", systemImage: "square.and.arrow.up") }
                     .buttonStyle(.bordered).controlSize(.regular)
+                ChromeConnectionNotice()
             }
             ReportPicker().id("report-range")
             overviewCards
@@ -162,20 +161,6 @@ struct DashboardView: View {
                 statistic("电脑前台时长", value: durationText(model.appSeconds), symbol: "desktopcomputer", footnote: "已记录应用时长之和", accent: Palette.green)
                 statistic("网站浏览时长", value: durationText(model.websiteSeconds), symbol: "globe", footnote: "属于 Chrome 时长的一部分", accent: Palette.orange)
                 statistic("使用过的应用", value: "\(model.listedApplications.count) 个", symbol: "square.stack.3d.up", footnote: "\(model.listedWebsites.count) 个网站留下足迹", accent: Palette.green)
-            }
-            if !model.browserConnected {
-                Button { model.dashboardPage = .connection } label: {
-                    HStack(spacing: 10) {
-                        Image(systemName: "puzzlepiece.extension")
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text("连接 Chrome，补全浏览时间").font(.system(size: 12, weight: .medium))
-                            Text("应用统计已经就绪；安装并配对扩展后，网站会显示在这里。")
-                                .font(.system(size: 11)).foregroundStyle(Palette.muted)
-                        }
-                        Spacer()
-                        Image(systemName: "arrow.up.right")
-                    }.padding(16).background(Palette.green.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
-                }.buttonStyle(.plain)
             }
             HStack(alignment: .top, spacing: 16) {
                 ranking("应用", subtitle: "前台使用时间", items: model.listedApplications, kind: .application)

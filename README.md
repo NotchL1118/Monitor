@@ -32,6 +32,10 @@
 
 要求：macOS 14 或更新版本、Chrome 120 或更新版本，以及支持 Swift 5.9+ 的 Xcode / Command Line Tools。生成的应用适用于构建机器的处理器架构。
 
+可从 [GitHub Releases](https://github.com/NotchL1118/Monitor/releases) 下载已构建的应用：M 系列芯片选择 `macos-arm64.zip`，Intel 芯片选择 `macos-x86_64.zip`。解压后将 `Monitor.app` 移到「应用程序」文件夹，再从「连接与设置」打开随包 Chrome 扩展目录进行安装。若还没有发布版本，可以按下面的方式从源码构建。
+
+Release 应用目前采用 ad-hoc 签名，尚未进行 Apple Developer ID 签名和公证；首次打开可能被 macOS 拦截。确认下载来源后，可在「系统设置 → 隐私与安全性」中允许打开。
+
 仓库提供源码与图标资源；`dist/` 是本机生成目录，不随源码提交。克隆后先构建：
 
 ```bash
@@ -158,6 +162,31 @@ scripts/                构建、图标生成及测试脚本
 Resources/              应用信息、图标插画与品牌资源
 docs/images/            README 使用的测试数据截图
 ```
+
+## 自动构建与发布
+
+GitHub Actions 的 **Build and Release** 工作流会在向 `main` 提交、创建或更新 PR、推送 `v*` 标签时运行，也支持在 Actions 页面手动运行。Apple Silicon 和 Intel 两种架构分别运行 Swift、界面渲染及 Chrome 扩展单元测试，测试通过后构建 release 应用，并验证签名和 ZIP 解压后的应用包。
+
+普通分支构建的应用 ZIP 和校验文件保存在工作流的 **Artifacts** 中，保留 14 天；界面测试截图保留 7 天。手动选择分支运行只生成 Artifacts，选择版本标签运行则会进入发布流程。
+
+发布时，先更新 `Resources/Info.plist` 中的 `CFBundleShortVersionString` 和 `CFBundleVersion`，同步 README 版本说明；若改动了扩展，也更新 `ChromeExtension/manifest.json` 中的版本。提交并推送代码后，再创建与应用版本完全一致的标签。例如应用版本为 `0.3.1`：
+
+```bash
+git tag v0.3.1
+git push origin v0.3.1
+```
+
+两种架构全部测试、构建成功后，工作流会自动创建 GitHub Release，上传 `Monitor-0.3.1-macos-arm64.zip`、`Monitor-0.3.1-macos-x86_64.zip` 和 `SHA256SUMS.txt`，并生成更新说明。标签与应用版本不一致会失败，不会发布。附件全部上传成功后才公开 Release；失败后可重新运行工作流继续未完成的草稿，已公开的 Release 不会被覆盖。
+
+工作流使用 GitHub 自带的 `GITHUB_TOKEN`，仅发布任务需要 `contents: write`，无需额外配置令牌。尚未配置 Developer ID 证书或公证凭据。运行环境使用 [GitHub 标准 macOS runner](https://docs.github.com/en/actions/reference/runners/github-hosted-runners)。
+
+本机也可以生成相同格式的当前架构安装包：
+
+```bash
+./scripts/package-release.sh
+```
+
+输出位于 `dist/release/`；下载后在 ZIP 和校验文件所在目录运行 `shasum -a 256 -c SHA256SUMS.txt` 可验证 Release 附件。本机或 Actions Artifacts 中的单架构校验文件名为 `<ZIP 文件名>.sha256`，可用同一命令替换文件名进行验证。
 
 ## 常见问题
 
