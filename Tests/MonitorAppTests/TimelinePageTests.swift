@@ -81,13 +81,60 @@ final class TimelinePageTests: XCTestCase {
             ActivitySlice(id: 3, kind: .website, key: "example.com", name: "example.com", start: day.addingTimeInterval(90), end: day.addingTimeInterval(200),
                           pageURL: "https://example.com/a", pageTitle: "Page A")
         ]
-        let report = ApplicationReport(application: chrome, period: .day, interval: DateInterval(start: day, duration: 86400),
-            sessions: [session], now: day.addingTimeInterval(86400), calendar: calendar, websites: pages)
-        let visits = report.browserVisits(in: session)
+        let report = BrowserReport(period: .day, interval: DateInterval(start: day, duration: 86400),
+            calendar: calendar, websites: pages, sessions: [session], now: day.addingTimeInterval(86400))
+        let visits = report.visits(in: session)
         XCTAssertEqual(visits.map(\.seconds), [30, 90])
         XCTAssertNil(visits[0].pageURL)
         XCTAssertEqual(visits[1].pageTitle, "Page A")
-        XCTAssertEqual(BrowserVisitGroup.groups(visits).count, 1)
-        XCTAssertEqual(visits.reduce(0) { $0 + $1.seconds }, report.seconds)
+        let timeline = BrowserVisitTimeline(session: session, visits: visits, activeSeconds: session.seconds)
+        XCTAssertEqual(timeline.domainSlots.count, 1)
+        XCTAssertEqual(timeline.rows.count, 2)
+        XCTAssertEqual(visits.reduce(0) { $0 + $1.seconds }, session.seconds)
+    }
+
+    func testBrowserTimelineKeepsRepeatVisitsOnOneSessionScale() throws {
+        let session = app(1, 0, 130, key: ActivityTracker.chromeBundleID)
+        let visits = [(5, 18), (22, 60), (60, 125)].enumerated().map { index, times in
+            ActivitySlice(id: Int64(index + 2), kind: .website, key: "repeat.test", name: "repeat.test",
+                          start: day.addingTimeInterval(Double(times.0)), end: day.addingTimeInterval(Double(times.1)))
+        }
+        let timeline = BrowserVisitTimeline(session: session, visits: visits, activeSeconds: 124)
+        let gaps = timeline.rows.compactMap { row -> DateInterval? in
+            if case .gap(let interval) = row { return interval }
+            return nil
+        }
+        XCTAssertEqual(gaps.map(\.start), [day, day.addingTimeInterval(125)])
+        XCTAssertEqual(gaps.map(\.duration), [5, 5])
+        XCTAssertEqual(timeline.missingSeconds, 8)
+        XCTAssertEqual(timeline.lanes.count, 1)
+        XCTAssertEqual(timeline.lanes.first?.visits.map(\.id), [2, 3, 4])
+        let span = try XCTUnwrap(timeline.fractions(for: visits[2]))
+        XCTAssertEqual(span.lowerBound, 60.0 / 130, accuracy: 0.00001)
+        XCTAssertEqual(span.upperBound, 125.0 / 130, accuracy: 0.00001)
+    }
+
+    func testSiteRunsJoinPageChangesButBreakOnAnotherSiteOrAFullSecondGap() throws {
+        let session = app(1, 47, 65, key: ActivityTracker.chromeBundleID)
+        let spans: [(String, String, Double, Double)] = [
+            ("ippure.com", "/", 47.230, 50.182), ("ippure.com", "/claude.html", 50.182, 57.895),
+            ("ippure.com", "/claude.html", 58.001, 59.407), ("other.test", "/", 59.420, 59.500),
+            ("ippure.com", "/", 59.510, 60), ("ippure.com", "/", 61, 64)
+        ]
+        let visits = spans.enumerated().map { i, span in
+            ActivitySlice(id: Int64(i + 2), kind: .website, key: span.0, name: span.0,
+                          start: day.addingTimeInterval(span.2), end: day.addingTimeInterval(span.3),
+                          pageURL: "https://" + span.0 + span.1)
+        }
+        let timeline = BrowserVisitTimeline(session: session, visits: visits, activeSeconds: session.seconds)
+        let lane = try XCTUnwrap(timeline.lanes.first { $0.domain == "ippure.com" })
+        XCTAssertEqual(lane.runs, [
+            DateInterval(start: visits[0].start, end: visits[2].end),
+            DateInterval(start: visits[4].start, end: visits[4].end),
+            DateInterval(start: visits[5].start, end: visits[5].end)
+        ])
+        XCTAssertEqual(lane.visits.map(\.id), [2, 3, 4, 6, 7])
+        let recorded = lane.visits.prefix(3).reduce(0) { $0 + $1.seconds }
+        XCTAssertEqual(lane.runs[0].duration - recorded, 0.106, accuracy: 0.00001)
     }
 }

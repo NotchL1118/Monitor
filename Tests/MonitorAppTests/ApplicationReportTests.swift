@@ -52,6 +52,18 @@ final class ApplicationReportTests: XCTestCase {
         XCTAssertEqual(partial.buckets.reduce(0) { $0 + $1.seconds }, partial.seconds)
     }
 
+    func testRecordedTimeOfAMergedSessionIsSplitAtMidnight() {
+        let midnight = date(4)
+        let first = session(1, midnight.addingTimeInterval(-40), midnight.addingTimeInterval(-10))
+        let second = session(2, midnight.addingTimeInterval(5), midnight.addingTimeInterval(25))
+        let report = ApplicationReport(application: identity, period: .week,
+            interval: ReportPeriod.week.interval(containing: midnight, calendar: calendar),
+            sessions: [first, second], now: date(5), calendar: calendar)
+        XCTAssertEqual(report.sessions.count, 1)
+        XCTAssertEqual(report.activeSeconds[first.start], 30)
+        XCTAssertEqual(report.activeSeconds[midnight], 20)
+    }
+
     func testMonthEmptyDaysAndSessionsOutsideRange() {
         let span = ReportPeriod.month.interval(containing: date(4), calendar: calendar)
         let report = ApplicationReport(application: identity, period: .month, interval: span,

@@ -121,6 +121,14 @@ final class IntegrationTests: XCTestCase {
         for width in [1120, 920] {
             try await renderer?.capture("detail-dashboard-\(width).png", width: width, height: 950)
         }
+        model.dashboardPage = .browser
+        XCTAssertEqual(model.browserReport?.seconds, 1200)
+        XCTAssertEqual(model.browserReport?.pages.count, 2)
+        XCTAssertEqual(model.browserReport?.unaddressedSeconds, 300)
+        for width in [1120, 920] {
+            try await renderer?.capture("browser-analysis-\(width).png", width: width, height: 1020)
+        }
+
         // Render the approved daily tracks with sparse, long, and very short sessions.
         let fixture: [(String, String, Double, Double)] = [
             ("com.openai.codex", "ChatGPT", 10, 11.5),

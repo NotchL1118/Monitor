@@ -6,8 +6,17 @@ enum Palette {
     static let background = Color(red: 0.96, green: 0.96, blue: 0.94)
     static let ink = Color(red: 0.16, green: 0.22, blue: 0.20)
     static let green = Color(red: 0.24, green: 0.40, blue: 0.32)
-    static let muted = Color(red: 0.47, green: 0.51, blue: 0.47)
+    /// About 5.6:1 on white and 5.1:1 on `background`, enough for caption-sized text.
+    static let muted = Color(red: 0.34, green: 0.42, blue: 0.37)
     static let orange = Color(red: 0.75, green: 0.43, blue: 0.26)
+    /// Recessed fills: segmented-control tracks, meters, search fields.
+    static let sunk = Color(red: 0.925, green: 0.933, blue: 0.902)
+    static let line = Color(red: 0.867, green: 0.886, blue: 0.847)
+    /// Solid light green for secondary marks, instead of a translucent `green`.
+    static let mint = Color(red: 0.788, green: 0.863, blue: 0.788)
+    static let selection = Color(red: 0.929, green: 0.953, blue: 0.918)
+    static let increase = Color(red: 0.63, green: 0.32, blue: 0.17)
+    static let decrease = Color(red: 0.18, green: 0.43, blue: 0.32)
 }
 
 struct DashboardView: View {
@@ -26,6 +35,7 @@ struct DashboardView: View {
                         switch model.dashboardPage {
                         case .overview: overview
                         case .applications: applicationAnalysis
+                        case .browser: BrowserAnalysisView(scrollProxy: proxy)
                         case .dayTimeline: DayTimelineView()
                         case .connection: connection.onAppear { model.refreshStorageUsage() }
                         }
@@ -94,6 +104,7 @@ struct DashboardView: View {
             VStack(spacing: 8) {
                 navigation("时间概览", symbol: "square.grid.2x2", id: .overview)
                 navigation("应用分析", symbol: "chart.xyaxis.line", id: .applications)
+                navigation("浏览器分析", symbol: "globe", id: .browser)
                 navigation("一日时间线", symbol: "point.3.connected.trianglepath.dotted", id: .dayTimeline)
                 navigation("连接与设置", symbol: "slider.horizontal.3", id: .connection)
             }
@@ -129,8 +140,11 @@ struct DashboardView: View {
             HStack(spacing: 10) {
                 Image(systemName: symbol).frame(width: 18)
                 Text(title).font(.system(size: 13, weight: model.dashboardPage == id ? .semibold : .regular))
-                Spacer()
-            }.padding(12).background(model.dashboardPage == id ? Color.white : .clear, in: RoundedRectangle(cornerRadius: 9))
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(12)
+            .background(model.dashboardPage == id ? Color.white : .clear, in: RoundedRectangle(cornerRadius: 9))
+            .contentShape(Rectangle())
         }.buttonStyle(.plain)
     }
 
@@ -192,7 +206,7 @@ struct DashboardView: View {
             HStack(spacing: 14) {
                 statistic("电脑前台时长", value: durationText(model.appSeconds), symbol: "desktopcomputer", footnote: "已记录应用时长之和", accent: Palette.green)
                 statistic("网站浏览时长", value: durationText(model.websiteSeconds), symbol: "globe", footnote: "属于 Chrome 时长的一部分", accent: Palette.orange)
-                statistic("使用过的应用", value: "\(model.listedApplications.count) 个", symbol: "square.stack.3d.up", footnote: "\(model.listedWebsites.count) 个网站留下足迹", accent: Palette.green)
+                statistic("使用过的应用", value: "\(model.listedApplications.count) 个", symbol: "square.stack.3d.up", footnote: "\(model.listedWebsites.count) 个域名留下足迹", accent: Palette.green)
             }
             HStack(alignment: .top, spacing: 16) {
                 preview(.ranking(.application))

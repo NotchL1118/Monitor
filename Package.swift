@@ -8,7 +8,7 @@ let package = Package(
     targets: [
         .systemLibrary(name: "CSQLite"),
         .target(name: "MonitorCore", dependencies: ["CSQLite"]),
-        .executableTarget(name: "Monitor", dependencies: ["MonitorCore"]),
+        .executableTarget(name: "Monitor", dependencies: ["MonitorCore"], resources: [.copy("SiteRules/public_suffix_list.dat")]),
         .testTarget(name: "MonitorCoreTests", dependencies: ["MonitorCore"]),
         .testTarget(name: "MonitorAppTests", dependencies: ["Monitor", "MonitorCore"])
     ]

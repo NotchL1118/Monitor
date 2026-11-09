@@ -26,22 +26,20 @@ struct ApplicationReport {
     let sessions: [ActivitySlice]
     let buckets: [UsageBucket]
     let days: [SessionDay]
-    let websites: [ActivitySlice]
     /// Recorded foreground time, excluding absorbed switches.
     let seconds: Double
     let interruptions: [Int64: Int]
-    /// Recorded time of each merged block, keyed like `interruptions`.
-    let activeSeconds: [Int64: Double]
+    /// Two parts of a block split at midnight share a database ID but have distinct start times.
+    let activeSeconds: [Date: Double]
     var longest: Double { sessions.map(\.seconds).max() ?? 0 }
     var peak: UsageBucket? { buckets.filter { $0.seconds > 0 }.max { $0.seconds < $1.seconds } }
 
     init(application: ActivityIdentity, period: ReportPeriod, interval: DateInterval,
-         sessions: [ActivitySlice], now: Date = Date(), calendar: Calendar = ReportPeriod.calendar, websites: [ActivitySlice] = []) {
+         sessions: [ActivitySlice], now: Date = Date(), calendar: Calendar = ReportPeriod.calendar) {
         self.application = application
         self.period = period
         self.interval = interval
         self.calendar = calendar
-        self.websites = websites.filter { $0.kind == .website }.sorted { $0.start < $1.start }
         let end = min(interval.end, now)
         let clipped = sessions.compactMap { slice -> ActivitySlice? in
             guard slice.kind == .application, slice.key == application.key else { return nil }
@@ -53,7 +51,6 @@ struct ApplicationReport {
         let merged = SessionMerger.merge(clipped)
         self.sessions = merged.map(\.slice)
         interruptions = Dictionary(merged.map { ($0.slice.id, $0.interruptions) }, uniquingKeysWith: max)
-        activeSeconds = Dictionary(merged.map { ($0.slice.id, $0.activeSeconds) }, uniquingKeysWith: max)
         func byDay(_ slices: [ActivitySlice]) -> [Date: [ActivitySlice]] {
             var grouped: [Date: [ActivitySlice]] = [:]
             for slice in slices {
@@ -69,6 +66,15 @@ struct ApplicationReport {
             return grouped
         }
         let blocksByDay = byDay(self.sessions), rawByDay = byDay(clipped)
+        var recordedByStart: [Date: Double] = [:]
+        for (day, blocks) in blocksByDay {
+            let raw = rawByDay[day, default: []]
+            for block in blocks {
+                let span = DateInterval(start: block.start, end: block.end)
+                recordedByStart[block.start] = raw.overlapping(span).reduce(0) { $0 + $1.seconds }
+            }
+        }
+        activeSeconds = recordedByStart
         days = blocksByDay.keys.sorted().map { day in
             SessionDay(date: day, sessions: blocksByDay[day]!, seconds: rawByDay[day, default: []].reduce(0) { $0 + $1.seconds })
         }
@@ -86,28 +92,6 @@ struct ApplicationReport {
             cursor = next
         }
         buckets = result
-    }
-
-    func browserVisits(in session: ActivitySlice) -> [ActivitySlice] {
-        guard application.key == ActivityTracker.chromeBundleID else { return [] }
-        // Website visits are non-overlapping and chronological. Seek directly to this
-        // application's session so month reports don't repeatedly scan the full history.
-        var lower = 0, upper = websites.count
-        while lower < upper {
-            let mid = (lower + upper) / 2
-            if websites[mid].end <= session.start { lower = mid + 1 } else { upper = mid }
-        }
-        var visits: [ActivitySlice] = []
-        while lower < websites.count && websites[lower].start < session.end {
-            let visit = websites[lower]
-            let start = max(visit.start, session.start), end = min(visit.end, session.end)
-            if end > start {
-                visits.append(ActivitySlice(id: visit.id, kind: .website, key: visit.key, name: visit.name,
-                    start: start, end: end, pageURL: visit.pageURL, pageTitle: visit.pageTitle))
-            }
-            lower += 1
-        }
-        return visits
     }
 
     func bucket(containing date: Date) -> UsageBucket? {
