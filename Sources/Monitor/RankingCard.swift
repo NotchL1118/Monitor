@@ -24,17 +24,9 @@ struct RankingCard: View {
                     Text(kind == .application ? "所选时段还没有应用记录" : "所选时段还没有网站记录")
                 }.font(.callout).foregroundStyle(Palette.muted).frame(maxWidth: .infinity).padding(.vertical, 36)
             } else {
-                HStack(spacing: 12) {
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text(kind == .application ? "前台使用时间" : "Chrome 当前标签页")
-                            .font(.system(size: 11)).foregroundStyle(Palette.muted)
-                        Text(compactDuration(total)).font(.system(size: 24, weight: .semibold, design: .rounded))
-                            .monospacedDigit().lineLimit(1).minimumScaleFactor(0.7)
-                        if close != nil {
-                            shareHeadline(shares, kind: kind).font(.system(size: 11)).foregroundStyle(Palette.muted)
-                        }
-                    }.frame(maxWidth: .infinity, alignment: .leading)
-                    UsageShareRing(shares: shares, kind: kind, highlighted: $highlighted)
+                ViewThatFits(in: .horizontal) {
+                    summary(shares, size: UsageShareRing.classicSize)
+                    summary(shares, size: UsageShareRing.narrowSize)
                 }
                 Divider()
                 if close == nil {
@@ -66,13 +58,41 @@ struct RankingCard: View {
         .padding(18).frame(maxWidth: .infinity, alignment: .topLeading)
     }
 
+    private func summary(_ shares: [UsageShare], size: CGFloat) -> some View {
+        HStack(spacing: 13) {
+            UsageShareRing(shares: shares, kind: kind, highlighted: $highlighted, size: size)
+            if let first = shares.first {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(first.name).font(.system(size: 15, weight: .semibold)).foregroundStyle(Palette.ink)
+                        .lineLimit(1).minimumScaleFactor(0.85).truncationMode(.middle).help(first.name)
+                    Text("占\(kind == .application ? "前台" : "网站")时长 \(UsageShare.percentText(first.fraction))")
+                        .font(.system(size: 13, weight: .medium)).foregroundStyle(Palette.ink)
+                    if let second = shares.dropFirst().first {
+                        let remaining = shares.dropFirst().reduce(0) { $0 + $1.seconds }
+                        if first.fraction >= 0.5, remaining > 0 {
+                            let ratio = String(format: "%.1f", first.seconds / remaining)
+                            Text("约是其余\(kind == .application ? "应用" : "网站")合计的 \(ratio) 倍。")
+                        } else {
+                            Text("前两项合计占 \(UsageShare.percentText(first.fraction + second.fraction))。")
+                        }
+                    }
+                }
+                .font(.system(size: 11)).foregroundStyle(Palette.muted)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(minWidth: 100, maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        // Select the ring size by the card width, independently of the current names or percentages.
+        .frame(idealWidth: size + 13 + 100, maxWidth: .infinity, alignment: .leading)
+    }
+
     private func rows(_ items: [UsageSummary], shares: [UsageShare], total: Double) -> some View {
         LazyVStack(spacing: 6) {
             ForEach(items) { item in
                 let share = shares.first { $0.key == item.key }
                 let shareKey = share?.key ?? UsageShare.otherKey
                 let row = rankingRow(item, maximum: self.items.first?.seconds ?? 1,
-                                     color: SharePalette.color(slot: share?.slot, kind: kind),
+                                     color: SharePalette.color(slot: share?.slot),
                                      fraction: item.seconds / max(total, 1), highlighted: highlighted == shareKey)
                     .accessibilityIdentifier("ranking-row-\(item.key)")
                     .onHover { inside in
