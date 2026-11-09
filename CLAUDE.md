@@ -11,10 +11,12 @@ Monitor is a native macOS 14+ menu-bar time tracker (Swift 5.9 / SwiftUI / syste
 Always go through the scripts (or replicate their env vars). They set `CLANG_MODULE_CACHE_PATH`/`SWIFTPM_MODULECACHE_OVERRIDE` to `.build/ModuleCache` and pass `--disable-sandbox --cache-path .build/cache`.
 
 ```bash
+./scripts/restart.swift     # package, verify, restart dist/Monitor.app, and confirm its local service is listening
 ./scripts/build.sh          # regenerate icons/brand PNGs, release build, assemble + ad-hoc sign dist/Monitor.app
-open dist/Monitor.app
 ./scripts/test.sh           # swift test + node --test ChromeExtension/tests/*.test.js
 ```
+
+After finishing a requested change on this Mac, run `./scripts/restart.swift` from the project root before reporting completion. Use the current working tree, including uncommitted changes. The command verifies the release ZIP in `dist/release/` before asking the old Monitor process to quit normally, then starts the new app in the foreground. Report the new PID and the result of the local service check. If the user explicitly asks to skip a restart, follow that instruction.
 
 Run a single Swift test (use the same env/flags):
 
