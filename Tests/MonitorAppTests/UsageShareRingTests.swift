@@ -6,15 +6,19 @@ import MonitorCore
 final class UsageShareRingTests: XCTestCase {
     @MainActor
     func testBadgesFitWideAndNarrowSectorsAtBothSizes() throws {
-        let items = [67, 20, 7, 4, 1, 1].enumerated().map {
+        let minutes = [242, 42, 32, 16, 10] + Array(repeating: 3, count: 10) + [2, 2]
+        let items = minutes.enumerated().map {
             UsageSummary(key: "app-\($0.offset)", name: "App \($0.offset)", seconds: Double($0.element))
         }
         let shares = UsageShare.make(items)
-        for size: CGFloat in [88, 152] {
+        for size in [UsageShareRing.classicSize, UsageShareRing.narrowSize] {
             let ring = UsageShareRing(shares: shares, kind: .application, highlighted: .constant(nil), size: size)
             let wide = try XCTUnwrap(ring.badgeFrame(for: shares[0]))
-            let narrow = try XCTUnwrap(ring.badgeFrame(for: shares[2]))
+            let narrow = try XCTUnwrap(ring.badgeFrame(for: shares[3]))
             XCTAssertGreaterThan(wide.width, narrow.width)
+            let center = size / 2
+            XCTAssertGreaterThan(hypot(narrow.midX - center, narrow.midY - center),
+                                 hypot(wide.midX - center, wide.midY - center))
             XCTAssertNil(ring.badgeFrame(for: shares[4]))
             XCTAssertNil(ring.badgeFrame(for: shares[5])) // "Other" has no single icon.
             let frames = shares.compactMap { ring.badgeFrame(for: $0) }

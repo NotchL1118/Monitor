@@ -3,25 +3,38 @@ import SwiftUI
 import MonitorCore
 
 enum SharePalette {
-    private static let opacity = [1.0, 0.74, 0.54, 0.39, 0.28]
+    static let slots: [Color] = [
+        Color(red: 0.122, green: 0.502, blue: 0.345),
+        Color(red: 0.690, green: 0.490, blue: 0.118),
+        Color(red: 0.227, green: 0.463, blue: 0.722),
+        Color(red: 0.769, green: 0.353, blue: 0.180),
+        Color(red: 0.541, green: 0.333, blue: 0.675)
+    ]
+    static let other = Color(red: 0.765, green: 0.780, blue: 0.749)
 
-    static func color(slot: Int?, kind: ActivityKind) -> Color {
-        guard let slot, opacity.indices.contains(slot) else { return Palette.muted.opacity(0.28) }
-        return OverviewModule.ranking(kind).accent.opacity(opacity[slot])
+    static func color(slot: Int?) -> Color {
+        guard let slot, slots.indices.contains(slot) else { return other }
+        return slots[slot]
     }
 }
 
 /// Ring chart of the selected period's time share. Hovering a sector highlights it and the matching rows.
 struct UsageShareRing: View {
-    private static let innerRatio = 0.48
-    private static let outerRatio = 0.76
+    static let classicSize: CGFloat = 210
+    static let narrowSize: CGFloat = 160
+    private static let innerRatio = 0.52
+    private static let outerRatio = 0.82
 
     let shares: [UsageShare]
     let kind: ActivityKind
     @Binding var highlighted: String?
-    var size: CGFloat = 88
+    let size: CGFloat
 
     private var radius: CGFloat { size / 2 }
+    private var outerRadius: CGFloat { radius * Self.outerRatio }
+    private var innerRadius: CGFloat { outerRadius * Self.innerRatio }
+    private var scale: CGFloat { size / Self.classicSize }
+    private var total: Double { shares.reduce(0) { $0 + $1.seconds } }
 
     var body: some View {
         ZStack {
@@ -30,7 +43,7 @@ struct UsageShareRing: View {
                            innerRadius: .ratio(Self.innerRatio), outerRadius: .ratio(Self.outerRatio),
                            angularInset: shares.count > 1 ? 1.2 : 0)
                     .cornerRadius(2)
-                    .foregroundStyle(SharePalette.color(slot: share.slot, kind: kind))
+                    .foregroundStyle(SharePalette.color(slot: share.slot))
                     .opacity(dimmed(share.key) ? 0.3 : 1)
             }
             .chartLegend(.hidden)
@@ -53,16 +66,21 @@ struct UsageShareRing: View {
         .animation(.easeOut(duration: 0.15), value: highlighted)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(kind == .application ? "应用时间占比" : "网站时间占比")
-        .accessibilityValue(shares.map { "\($0.name) \(UsageShare.percentText($0.fraction))" }.joined(separator: "，"))
+        .accessibilityValue(([compactDuration(total)] + shares.map { "\($0.name) \(UsageShare.percentText($0.fraction))" }).joined(separator: "，"))
     }
 
     private func dimmed(_ key: String) -> Bool { highlighted != nil && highlighted != key }
 
     @ViewBuilder private var center: some View {
-        if let share = shares.first(where: { $0.key == highlighted }) ?? shares.first {
-            Text(UsageShare.percentText(share.fraction))
-                .font(.system(size: 15, weight: .semibold, design: .rounded)).foregroundStyle(Palette.ink)
-                .monospacedDigit().help(share.name)
+        if let key = highlighted, let share = shares.first(where: { $0.key == key }) {
+            VStack(spacing: 2) {
+                Text(UsageShare.percentText(share.fraction)).font(.system(size: 17 * scale, weight: .semibold, design: .rounded)).foregroundStyle(Palette.ink)
+                Text(share.name).font(.system(size: 10)).foregroundStyle(Palette.muted).lineLimit(1)
+            }.monospacedDigit().frame(maxWidth: innerRadius * 1.7)
+        } else {
+            Text(compactDuration(total)).font(.system(size: 15 * scale, weight: .semibold, design: .rounded)).foregroundStyle(Palette.ink)
+                .monospacedDigit().lineLimit(1).minimumScaleFactor(0.7)
+                .frame(maxWidth: innerRadius * 1.8)
         }
     }
 
@@ -71,11 +89,11 @@ struct UsageShareRing: View {
         guard !share.isOther else { return nil }
         let angle = share.middle * 2 * .pi
         let halfAngle = min(share.fraction, 0.5) * .pi
-        let onRing = radius * (Self.innerRatio + Self.outerRatio) / 2
-        let smallDiameter = min(17, size * 0.15)
+        let onRing = (innerRadius + outerRadius) / 2
+        let smallDiameter = 17 * scale
         let outside = radius - smallDiameter / 2 - 1
-        let candidates = [(onRing, min(24, size * 0.20)), (outside, smallDiameter)]
-        for (distance, diameter) in candidates where 2 * distance * sin(halfAngle) >= diameter + 2 {
+        let candidates = [(onRing, 24 * scale, 30 * scale), (outside, smallDiameter, 20 * scale)]
+        for (distance, diameter, minimumSpan) in candidates where 2 * distance * sin(halfAngle) >= minimumSpan {
             return CGRect(x: radius + distance * sin(angle) - diameter / 2,
                           y: radius - distance * cos(angle) - diameter / 2,
                           width: diameter, height: diameter)
@@ -104,27 +122,10 @@ struct UsageShareRing: View {
     private func share(at point: CGPoint) -> UsageShare? {
         let dx = point.x - radius, dy = point.y - radius
         let distance = (dx * dx + dy * dy).squareRoot()
-        guard distance >= radius * Self.innerRatio - 2, distance <= radius else { return nil }
+        guard distance >= innerRadius - 2, distance <= radius else { return nil }
         let angle = atan2(dx, -dy)
         return UsageShare.share(at: angle / (2 * .pi), in: shares)
     }
-}
-
-/// One-line summary next to the ring, e.g. "ChatGPT 占了 71%，是其余应用加起来的 2.5 倍。"
-func shareHeadline(_ shares: [UsageShare], kind: ActivityKind) -> Text {
-    let noun = kind == .application ? "应用" : "网站"
-    guard let first = shares.first else { return Text("") }
-    guard shares.count > 1 else {
-        return Text("所选时段只用了 ") + Text(first.name).bold() + Text("。")
-    }
-    if first.fraction >= 0.5 {
-        let ratio = first.fraction / max(1 - first.fraction, 0.0001)
-        return Text(first.name).bold() + Text(" 占了 ") + Text(UsageShare.percentText(first.fraction)).bold()
-            + Text("，是其余\(noun)加起来的 \(String(format: "%.1f", ratio)) 倍。")
-    }
-    let second = shares[1]
-    return Text("前两名 ") + Text(first.name).bold() + Text(" 和 ") + Text(second.name).bold() + Text(" 合计 ")
-        + Text(UsageShare.percentText(first.fraction + second.fraction)).bold() + Text("，时间分布相对分散。")
 }
 
 /// Short duration for the module summary: "5小时53分", "33分钟", "50秒".
