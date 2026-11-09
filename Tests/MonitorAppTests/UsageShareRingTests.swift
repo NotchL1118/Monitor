@@ -5,6 +5,17 @@ import MonitorCore
 
 final class UsageShareRingTests: XCTestCase {
     @MainActor
+    func testLowerRanksHaveProgressivelyLighterColors() {
+        let luminances = (0..<5).map { rank in
+            let color = SharePalette.color(slot: rank).resolve(in: EnvironmentValues())
+            return 0.2126 * color.linearRed + 0.7152 * color.linearGreen + 0.0722 * color.linearBlue
+        }
+        for (higherRank, lowerRank) in zip(luminances, luminances.dropFirst()) {
+            XCTAssertLessThan(higherRank, lowerRank)
+        }
+    }
+
+    @MainActor
     func testBadgesFitWideAndNarrowSectorsAtBothSizes() throws {
         let minutes = [242, 42, 32, 16, 10] + Array(repeating: 3, count: 10) + [2, 2]
         let items = minutes.enumerated().map {

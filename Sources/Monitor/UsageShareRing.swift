@@ -3,12 +3,13 @@ import SwiftUI
 import MonitorCore
 
 enum SharePalette {
+    // Keep the classic hues; each successive rank has a higher perceptual lightness.
     static let slots: [Color] = [
         Color(red: 0.122, green: 0.502, blue: 0.345),
         Color(red: 0.690, green: 0.490, blue: 0.118),
-        Color(red: 0.227, green: 0.463, blue: 0.722),
-        Color(red: 0.769, green: 0.353, blue: 0.180),
-        Color(red: 0.541, green: 0.333, blue: 0.675)
+        Color(red: 0.471, green: 0.632, blue: 0.810),
+        Color(red: 0.876, green: 0.653, blue: 0.560),
+        Color(red: 0.837, green: 0.763, blue: 0.884)
     ]
     static let other = Color(red: 0.765, green: 0.780, blue: 0.749)
 
