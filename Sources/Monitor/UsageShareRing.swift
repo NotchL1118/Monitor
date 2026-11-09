@@ -13,15 +13,15 @@ enum SharePalette {
 
 /// Ring chart of the selected period's time share. Hovering a sector highlights it and the matching rows.
 struct UsageShareRing: View {
-    static let size: CGFloat = 88
-    private static let innerRatio = 0.68
-    private static let outerRatio = 0.96
+    private static let innerRatio = 0.48
+    private static let outerRatio = 0.76
 
     let shares: [UsageShare]
     let kind: ActivityKind
     @Binding var highlighted: String?
+    var size: CGFloat = 88
 
-    private var radius: CGFloat { Self.size / 2 }
+    private var radius: CGFloat { size / 2 }
 
     var body: some View {
         ZStack {
@@ -34,9 +34,15 @@ struct UsageShareRing: View {
                     .opacity(dimmed(share.key) ? 0.3 : 1)
             }
             .chartLegend(.hidden)
+            ForEach(shares) { share in
+                if let frame = badgeFrame(for: share) {
+                    badge(share, diameter: frame.width)
+                        .position(x: frame.midX, y: frame.midY)
+                }
+            }
             center
         }
-        .frame(width: Self.size, height: Self.size)
+        .frame(width: size, height: size)
         .contentShape(Circle())
         .onContinuousHover { phase in
             switch phase {
@@ -60,10 +66,45 @@ struct UsageShareRing: View {
         }
     }
 
+    /// Keep the whole badge within its sector; a narrow slice has more room at the outer edge.
+    func badgeFrame(for share: UsageShare) -> CGRect? {
+        guard !share.isOther else { return nil }
+        let angle = share.middle * 2 * .pi
+        let halfAngle = min(share.fraction, 0.5) * .pi
+        let onRing = radius * (Self.innerRatio + Self.outerRatio) / 2
+        let smallDiameter = min(17, size * 0.15)
+        let outside = radius - smallDiameter / 2 - 1
+        let candidates = [(onRing, min(24, size * 0.20)), (outside, smallDiameter)]
+        for (distance, diameter) in candidates where 2 * distance * sin(halfAngle) >= diameter + 2 {
+            return CGRect(x: radius + distance * sin(angle) - diameter / 2,
+                          y: radius - distance * cos(angle) - diameter / 2,
+                          width: diameter, height: diameter)
+        }
+        return nil
+    }
+
+    private func badge(_ share: UsageShare, diameter: CGFloat) -> some View {
+        ZStack {
+            Circle().fill(.white)
+            if kind == .application {
+                ActivityIcon(key: share.key, kind: kind).frame(width: diameter - 2, height: diameter - 2)
+            } else {
+                let name = share.name
+                let host = name.lowercased().hasPrefix("www.") ? String(name.dropFirst(4)) : name
+                Text(String((host.isEmpty ? name : host).prefix(1)).uppercased())
+                    .font(.system(size: max(9, diameter * 0.52), weight: .semibold)).foregroundStyle(Palette.ink)
+            }
+        }
+        .frame(width: diameter, height: diameter)
+        .clipShape(Circle()).overlay(Circle().strokeBorder(Palette.background, lineWidth: 1))
+        .opacity(dimmed(share.key) ? 0.3 : 1)
+        .allowsHitTesting(false)
+    }
+
     private func share(at point: CGPoint) -> UsageShare? {
         let dx = point.x - radius, dy = point.y - radius
         let distance = (dx * dx + dy * dy).squareRoot()
-        guard distance >= radius * Self.innerRatio - 2, distance <= radius * Self.outerRatio + 2 else { return nil }
+        guard distance >= radius * Self.innerRatio - 2, distance <= radius else { return nil }
         let angle = atan2(dx, -dy)
         return UsageShare.share(at: angle / (2 * .pi), in: shares)
     }

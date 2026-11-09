@@ -34,7 +34,7 @@ struct RankingCard: View {
                             shareHeadline(shares, kind: kind).font(.system(size: 11)).foregroundStyle(Palette.muted)
                         }
                     }.frame(maxWidth: .infinity, alignment: .leading)
-                    UsageShareRing(shares: shares, kind: kind, highlighted: $highlighted)
+                    UsageShareRing(shares: shares, kind: kind, highlighted: $highlighted, size: close == nil ? 88 : 152)
                 }
                 Divider()
                 if close == nil {
