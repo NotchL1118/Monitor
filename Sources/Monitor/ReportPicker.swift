@@ -15,23 +15,10 @@ struct ReportPicker: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
         HStack(spacing: 14) {
-            if !dayOnly { HStack(spacing: 3) {
-                ForEach(ReportPeriod.allCases, id: \.self) { period in
-                    Button {
-                        model.period = period
-                    } label: {
-                        Text(period.rawValue)
-                            .font(.system(size: 14, weight: .semibold))
-                            .frame(width: 40, height: 32)
-                            .foregroundStyle(model.period == period ? .white : Palette.ink)
-                            .background(model.period == period ? Palette.green : .clear,
-                                        in: RoundedRectangle(cornerRadius: 7))
-                            .contentShape(Rectangle())
-                    }.buttonStyle(.plain)
-                        .accessibilityLabel("按\(period.rawValue)查看")
-                        .accessibilityAddTraits(model.period == period ? .isSelected : [])
-                }
-            }.padding(3).background(Palette.green.opacity(0.08), in: RoundedRectangle(cornerRadius: 10)) }
+            if !dayOnly {
+                SegmentedControl(options: ReportPeriod.allCases, selection: $model.period,
+                                 title: \.rawValue, accessibilityTitle: { "按\($0.rawValue)查看" })
+            }
 
             HStack(spacing: 0) {
                 arrow("chevron.left", "上一\(period.rawValue)") { step(-1) }

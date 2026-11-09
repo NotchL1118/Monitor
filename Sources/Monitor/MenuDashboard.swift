@@ -74,10 +74,8 @@ struct MenuDashboard: View {
             HStack {
                 Text("使用排行").font(.headline)
                 Spacer()
-                Picker("排行类型", selection: $kind) {
-                    Text("网站").tag(ActivityKind.website)
-                    Text("应用").tag(ActivityKind.application)
-                }.labelsHidden().pickerStyle(.segmented).frame(width: 104)
+                SegmentedControl(options: [ActivityKind.website, .application], selection: $kind, compact: true,
+                                 title: { $0 == .website ? "网站" : "应用" })
             }
             if rows.isEmpty {
                 Text(kind == .website ? (model.browserConnected ? "今天还没有网站记录" : "连接 Chrome 扩展后显示网站时长") : "今天还没有应用记录")

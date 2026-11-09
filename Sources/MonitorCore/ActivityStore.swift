@@ -145,25 +145,26 @@ public final class ActivityStore {
         return rows
     }
 
-    /// Full history for one identity within the report, independent of the overview's 200-row limit.
-    public func sessions(kind: ActivityKind, key: String, from start: Date, to end: Date) throws -> [ActivitySlice] {
-        let statement = try prepare("SELECT id, name, MAX(started, ?), MIN(ended, ?), page_url, page_title FROM activities WHERE kind = ? AND activity_key = ? AND ended > ? AND started < ? ORDER BY started, id;")
+    /// Full history for a kind or one identity within the report, independent of the overview's 200-row limit.
+    public func sessions(kind: ActivityKind, key: String? = nil, from start: Date, to end: Date) throws -> [ActivitySlice] {
+        let identityFilter = key == nil ? "" : " AND activity_key = ?"
+        let statement = try prepare("SELECT id, activity_key, name, MAX(started, ?), MIN(ended, ?), page_url, page_title FROM activities WHERE kind = ? AND ended > ? AND started < ?\(identityFilter) ORDER BY started, id;")
         defer { sqlite3_finalize(statement) }
         sqlite3_bind_double(statement, 1, start.timeIntervalSince1970)
         sqlite3_bind_double(statement, 2, end.timeIntervalSince1970)
         bind(kind.rawValue, to: statement, at: 3)
-        bind(key, to: statement, at: 4)
-        sqlite3_bind_double(statement, 5, start.timeIntervalSince1970)
-        sqlite3_bind_double(statement, 6, end.timeIntervalSince1970)
+        sqlite3_bind_double(statement, 4, start.timeIntervalSince1970)
+        sqlite3_bind_double(statement, 5, end.timeIntervalSince1970)
+        if let key { bind(key, to: statement, at: 6) }
         var rows: [ActivitySlice] = []
         while true {
             let result = sqlite3_step(statement)
             if result == SQLITE_DONE { break }
             guard result == SQLITE_ROW else { throw fail() }
-            rows.append(ActivitySlice(id: sqlite3_column_int64(statement, 0), kind: kind, key: key,
-                name: string(statement, 1), start: Date(timeIntervalSince1970: sqlite3_column_double(statement, 2)),
-                end: Date(timeIntervalSince1970: sqlite3_column_double(statement, 3)),
-                pageURL: optionalString(statement, 4), pageTitle: optionalString(statement, 5)))
+            rows.append(ActivitySlice(id: sqlite3_column_int64(statement, 0), kind: kind, key: string(statement, 1),
+                name: string(statement, 2), start: Date(timeIntervalSince1970: sqlite3_column_double(statement, 3)),
+                end: Date(timeIntervalSince1970: sqlite3_column_double(statement, 4)),
+                pageURL: optionalString(statement, 5), pageTitle: optionalString(statement, 6)))
         }
         return rows
     }

@@ -40,6 +40,7 @@ trap 'rm -rf "$VERIFY_DIR"' EXIT
 ditto -x -k "$OUTPUT/$ARCHIVE" "$VERIFY_DIR"
 test -x "$VERIFY_DIR/Monitor.app/Contents/MacOS/Monitor"
 test -f "$VERIFY_DIR/Monitor.app/Contents/Resources/ChromeExtension/manifest.json"
+test -s "$VERIFY_DIR/Monitor.app/Contents/Resources/public_suffix_list.dat"
 codesign --verify --deep --strict "$VERIFY_DIR/Monitor.app"
 test "$(/usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$VERIFY_DIR/Monitor.app/Contents/Info.plist")" = "$VERSION"
 

@@ -3,7 +3,7 @@ import Combine
 import MonitorCore
 import UniformTypeIdentifiers
 
-enum DashboardPage { case overview, applications, dayTimeline, connection }
+enum DashboardPage { case overview, applications, browser, dayTimeline, connection }
 
 @MainActor
 final class MonitorModel: ObservableObject {
@@ -31,6 +31,8 @@ final class MonitorModel: ObservableObject {
     @Published var selectedApplication: ActivityIdentity? { didSet { refreshApplicationReport() } }
     @Published private(set) var applicationReport: ApplicationReport?
     @Published private(set) var applicationReportError: String?
+    @Published private(set) var browserReport: BrowserReport?
+    @Published private(set) var browserReportError: String?
     @Published var currentApp = "等待应用活动"
     @Published private(set) var currentApplicationID: String?
     let mascot = MascotState()
@@ -39,7 +41,13 @@ final class MonitorModel: ObservableObject {
     @Published var serverError: String?
     @Published var storageError: String?
     @Published var notice: String?
-    @Published var dashboardPage: DashboardPage = .overview
+    @Published var dashboardPage: DashboardPage = .overview {
+        didSet {
+            guard dashboardPage != oldValue else { return }
+            if dashboardPage == .browser { refreshBrowserReport() }
+            else { browserReport = nil; browserReportError = nil }
+        }
+    }
     @Published private(set) var today = TodaySnapshot.empty(at: Date())
     var menuDashboardVisible = false
     @Published var screenUnavailable = false
@@ -251,6 +259,7 @@ final class MonitorModel: ObservableObject {
             dailyActivities = try store.activities(from: day.start, to: min(day.end, Date()), limit: -1)
                 .filter { $0.kind == .application }.sorted { $0.start < $1.start }
             refreshApplicationReport()
+            if dashboardPage == .browser { refreshBrowserReport() }
             if menuDashboardVisible { today = try TodaySnapshot.read(from: store, at: Date(), calendar: reportCalendar) }
             if dashboardPage == .connection { refreshStorageUsage() }
         } catch { storageError = error.localizedDescription; tracker.setEnabled(false, at: Date()) }
@@ -266,13 +275,36 @@ final class MonitorModel: ObservableObject {
             let interval = reportInterval
             let sessions = try store.sessions(kind: .application, key: application.key, from: interval.start, to: interval.end)
             applicationReport = ApplicationReport(application: application, period: period, interval: interval,
-                sessions: sessions, calendar: reportCalendar,
-                websites: application.key == ActivityTracker.chromeBundleID
-                    ? try store.activities(from: interval.start, to: interval.end, limit: -1).filter { $0.kind == .website } : [])
+                sessions: sessions, calendar: reportCalendar)
             applicationReportError = nil
         } catch {
             applicationReport = nil
             applicationReportError = "无法读取应用详情：\(error.localizedDescription)"
+        }
+    }
+
+    private func refreshBrowserReport() {
+        guard let store else { return }
+        let interval = reportInterval
+        do {
+            let now = Date()
+            let websites = try store.sessions(kind: .website, from: interval.start, to: interval.end)
+            let chrome = try store.sessions(kind: .application, key: ActivityTracker.chromeBundleID,
+                                            from: interval.start, to: interval.end)
+            // Compare against the previous period; while this one is still running, stop at the same elapsed time.
+            var previous = period.interval(containing: interval.start.addingTimeInterval(-1), calendar: reportCalendar)
+            if now < interval.end {
+                let elapsed = max(0, now.timeIntervalSince(interval.start))
+                previous = DateInterval(start: previous.start, end: min(previous.end, previous.start.addingTimeInterval(elapsed)))
+            }
+            let previousWebsites = try store.sessions(kind: .website, from: previous.start, to: previous.end)
+            browserReport = BrowserReport(period: period, interval: interval, calendar: reportCalendar,
+                                          websites: websites, sessions: chrome,
+                                          previousWebsites: previousWebsites, previousInterval: previous, now: now)
+            browserReportError = nil
+        } catch {
+            browserReport = nil
+            browserReportError = "无法读取浏览记录：\(error.localizedDescription)"
         }
     }
 

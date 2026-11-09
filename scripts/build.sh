@@ -14,6 +14,7 @@ BIN_DIR="$(swift build -c release --show-bin-path --disable-sandbox --cache-path
 APP="${1:-$PROJECT_ROOT/dist}/Monitor.app"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/ChromeExtension"
 cp "$BIN_DIR/Monitor" "$APP/Contents/MacOS/Monitor"
+cp Sources/Monitor/SiteRules/public_suffix_list.dat "$APP/Contents/Resources/"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 cp ChromeExtension/{manifest.json,activity.js,background.js,mascot.js,popup.html,popup.css,popup.js} "$APP/Contents/Resources/ChromeExtension/"
 cp -R ChromeExtension/icons "$APP/Contents/Resources/ChromeExtension/"

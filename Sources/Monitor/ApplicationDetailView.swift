@@ -3,7 +3,6 @@ import Charts
 import MonitorCore
 
 struct ApplicationDetailView: View {
-    @EnvironmentObject private var model: MonitorModel
     let report: ApplicationReport
     @State private var selectedBucket: Date?
     @State private var hoveredBucket: Date?
@@ -265,28 +264,16 @@ struct ApplicationDetailView: View {
                                     Label(["凌晨", "上午", "下午", "晚上"][part],
                                           systemImage: ["moon.stars", "sunrise", "sun.max", "moon"][part])
                                         .font(.system(size: 10)).foregroundStyle(Palette.muted).padding(.top, 6)
-                                    ForEach(sessions) { session in sessionDetail(session) }
+                                    ForEach(sessions) { session in sessionRow(session) }
                                 }
                             }
                         } else {
-                            ForEach(day.sessions) { session in sessionDetail(session) }
+                            ForEach(day.sessions) { session in sessionRow(session) }
                         }
                     }
                 }
             }
         }
-    }
-
-    @ViewBuilder private func sessionDetail(_ session: ActivitySlice) -> some View {
-        if report.application.key == ActivityTracker.chromeBundleID {
-            let bucket = selectedBucket.flatMap { report.bucket(containing: $0) }
-            let highlighted = report.period == .day && bucket.map {
-                session.start < $0.interval.end && session.end > $0.interval.start
-            } == true
-            BrowserSessionView(session: session, visits: report.browserVisits(in: session), calendar: calendar,
-                activeSeconds: report.activeSeconds[session.id], interruptions: report.interruptions[session.id] ?? 0,
-                initiallyExpanded: session.id == report.sessions.first?.id, highlighted: highlighted)
-        } else { sessionRow(session) }
     }
 
     private func sessionRow(_ session: ActivitySlice) -> some View {

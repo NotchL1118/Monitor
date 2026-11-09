@@ -135,7 +135,7 @@ private struct DashedLine: View {
     }
 }
 
-private struct Hatch: View {
+struct Hatch: View {
     var body: some View {
         Canvas { context, size in
             var path = Path()

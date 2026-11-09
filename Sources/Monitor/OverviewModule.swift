@@ -8,7 +8,7 @@ enum OverviewModule: Hashable {
     var title: String {
         switch self {
         case .ranking(.application): return "应用"
-        case .ranking(.website): return "网站"
+        case .ranking(.website): return "域名"
         case .timeline: return "时间足迹"
         }
     }

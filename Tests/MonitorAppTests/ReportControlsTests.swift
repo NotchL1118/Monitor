@@ -23,6 +23,57 @@ final class ReportControlsTests: XCTestCase {
     }
 
     @MainActor
+    func testSidebarRowsRespondToClicksInTrailingPadding() async throws {
+        try TestEnvironment.requireWindowRendering()
+        _ = NSApplication.shared
+        let model = MonitorModel(dataDirectory: FileManager.default.temporaryDirectory)
+        let host = NSHostingView(rootView: DashboardView().environmentObject(model)
+            .environment(\.accessibilityEnabled, true))
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1024, height: 650),
+                              styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        window.orderFront(nil)
+        defer { window.close() }
+
+        func button(named title: String, in item: NSObject) -> NSObject? {
+            if item.responds(to: NSSelectorFromString("accessibilityRole")),
+               item.value(forKey: "accessibilityRole") as? String == "AXButton",
+               item.value(forKey: "accessibilityLabel") as? String == title { return item }
+            guard item.responds(to: NSSelectorFromString("accessibilityChildren")),
+                  let children = item.value(forKey: "accessibilityChildren") as? [NSObject] else { return nil }
+            return children.lazy.compactMap { button(named: title, in: $0) }.first
+        }
+
+        let destinations: [(String, DashboardPage)] = [
+            ("应用分析", .applications), ("浏览器分析", .browser), ("一日时间线", .dayTimeline),
+            ("连接与设置", .connection), ("时间概览", .overview)
+        ]
+        for (title, destination) in destinations {
+            try await Task.sleep(for: .milliseconds(150))
+            host.layoutSubtreeIfNeeded()
+            let row = try XCTUnwrap(button(named: title, in: host), title)
+            let frame = try XCTUnwrap(row.value(forKey: "accessibilityFrame") as? NSValue)
+            let rect = window.convertFromScreen(frame.rectValue)
+            let page = try XCTUnwrap(scrollViews(in: host).first)
+            // Click just inside the row, measured from the sidebar's 20-point outer margin.
+            let sidebarRight = page.convert(page.bounds, to: nil).minX
+            try click(in: window, at: CGPoint(x: sidebarRight - 24, y: rect.midY))
+            XCTAssertEqual(model.dashboardPage, destination, title)
+        }
+    }
+
+    @MainActor
+    private func click(in window: NSWindow, at location: CGPoint) throws {
+        for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+            let event = try XCTUnwrap(NSEvent.mouseEvent(with: type, location: location, modifierFlags: [],
+                timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber, context: nil,
+                eventNumber: 1, clickCount: 1, pressure: 1))
+            window.sendEvent(event)
+        }
+    }
+
+    @MainActor
     func testOverviewLimitsPreviewAndRestoresScrollAfterClosingRanking() async throws {
         try TestEnvironment.requireWindowRendering()
         _ = NSApplication.shared
@@ -53,12 +104,7 @@ final class ReportControlsTests: XCTestCase {
         func click(_ point: CGPoint) throws {
             let y = host.isFlipped ? point.y : host.bounds.height - point.y
             let location = host.convert(CGPoint(x: point.x, y: y), to: nil)
-            for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
-                let event = try XCTUnwrap(NSEvent.mouseEvent(with: type, location: location, modifierFlags: [],
-                    timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber, context: nil,
-                    eventNumber: 1, clickCount: 1, pressure: 1))
-                window.sendEvent(event)
-            }
+            try self.click(in: window, at: location)
         }
 
         try await settle()
