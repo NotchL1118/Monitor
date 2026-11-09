@@ -14,9 +14,10 @@ if [[ -n "${RELEASE_TAG:-}" && "$RELEASE_TAG" != "v$VERSION" ]]; then
     exit 1
 fi
 
-./scripts/build.sh
+APP_DIR="${1:-$PROJECT_ROOT/dist}"
+./scripts/build.sh "$APP_DIR"
 
-APP="$PROJECT_ROOT/dist/Monitor.app"
+APP="$APP_DIR/Monitor.app"
 ARCH="$(lipo -archs "$APP/Contents/MacOS/Monitor")"
 case "$ARCH" in
     arm64|x86_64) ;;

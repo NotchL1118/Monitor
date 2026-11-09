@@ -11,7 +11,7 @@ swiftc Sources/Monitor/MascotArtwork.swift scripts/make-brand-assets.swift -o "$
 cp Resources/Brand/app-icon.png ChromeExtension/icons/portrait.png
 swift build -c release --disable-sandbox --cache-path "$PROJECT_ROOT/.build/cache"
 BIN_DIR="$(swift build -c release --show-bin-path --disable-sandbox --cache-path "$PROJECT_ROOT/.build/cache")"
-APP="$PROJECT_ROOT/dist/Monitor.app"
+APP="${1:-$PROJECT_ROOT/dist}/Monitor.app"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/ChromeExtension"
 cp "$BIN_DIR/Monitor" "$APP/Contents/MacOS/Monitor"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
