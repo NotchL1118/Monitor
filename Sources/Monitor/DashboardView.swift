@@ -14,7 +14,8 @@ struct DashboardView: View {
     @EnvironmentObject private var model: MonitorModel
     @State private var confirmDelete = false
     @State private var pendingRetention: (retention: DataRetention, cutoff: Date, count: Int)?
-    @State private var shareHighlight: [ActivityKind: String] = [:]
+    @State private var presentedModule: OverviewModule?
+    @FocusState private var focusedModule: OverviewModule?
 
     var body: some View {
         HStack(spacing: 0) {
@@ -31,12 +32,31 @@ struct DashboardView: View {
                         if let error = model.storageError { message(error, symbol: "exclamationmark.triangle", color: .red) }
                         if let error = model.serverError { message(error, symbol: "exclamationmark.triangle", color: Palette.orange) }
                     }.padding(32).id("page-top")
-                }.scrollIndicators(.hidden)
-                    // Only page navigation resets scrolling; switching apps keeps the current position.
-                    .onChange(of: model.dashboardPage) { _, _ in proxy.scrollTo("page-top", anchor: .top) }
+                }
+                .scrollDisabled(presentedModule != nil)
+                // Only page navigation resets scrolling; switching apps keeps the current position.
+                .onChange(of: model.dashboardPage) { _, _ in
+                    presentedModule = nil
+                    proxy.scrollTo("page-top", anchor: .top)
+                }
             }
         }
         .background(Palette.background)
+        .disabled(presentedModule != nil)
+        .accessibilityHidden(presentedModule != nil)
+        .overlayPreferenceValue(OverviewModuleBounds.self) { bounds in
+            if let module = presentedModule, let anchor = bounds[module] {
+                GeometryReader { geometry in
+                    OverviewModuleOverlay(module: module, source: geometry[anchor], size: geometry.size) {
+                        presentedModule = nil
+                        focusedModule = module
+                    } content: { expanded, close in
+                        moduleContent(module, close: expanded ? close : nil)
+                    }
+                    .id(module)
+                }
+            }
+        }
         .foregroundStyle(Palette.ink)
         .preferredColorScheme(.light)
         .environment(\.calendar, model.reportCalendar)
@@ -175,12 +195,36 @@ struct DashboardView: View {
                 statistic("使用过的应用", value: "\(model.listedApplications.count) 个", symbol: "square.stack.3d.up", footnote: "\(model.listedWebsites.count) 个网站留下足迹", accent: Palette.green)
             }
             HStack(alignment: .top, spacing: 16) {
-                ranking("应用", subtitle: "前台使用时间", items: model.listedApplications, kind: .application)
-                ranking("网站", subtitle: "Chrome 当前标签页", items: model.listedWebsites, kind: .website)
+                preview(.ranking(.application))
+                preview(.ranking(.website))
             }
-            timelineCard
+            preview(.timeline)
             Text("统计的是前台停留时间，不代表实际注意力。锁屏与休眠暂停计时；没有键鼠操作时仍会记录。")
                 .font(.system(size: 10)).foregroundStyle(Palette.muted)
+        }
+    }
+
+    private func preview(_ module: OverviewModule) -> some View {
+        Button { presentedModule = module } label: {
+            moduleContent(module, close: nil)
+                .overviewCardSurface(module)
+                .contentShape(RoundedRectangle(cornerRadius: 16))
+        }
+        .buttonStyle(.plain)
+        .focused($focusedModule, equals: module)
+        .accessibilityLabel("展开\(module.title)模块")
+        .anchorPreference(key: OverviewModuleBounds.self, value: .bounds) { [module: $0] }
+        .opacity(presentedModule == module ? 0 : 1)
+    }
+
+    @ViewBuilder private func moduleContent(_ module: OverviewModule, close: (() -> Void)?) -> some View {
+        switch module {
+        case .ranking(let kind):
+            RankingCard(kind: kind, items: kind == .application ? model.listedApplications : model.listedWebsites,
+                        reportLabel: model.reportLabel, selectedApplicationKey: model.selectedApplication?.key,
+                        showApplication: model.showApplication, close: close)
+        case .timeline:
+            timelineCard(close: close)
         }
     }
 
@@ -192,127 +236,38 @@ struct DashboardView: View {
         }.padding(20).frame(maxWidth: .infinity, alignment: .leading).background(.white, in: RoundedRectangle(cornerRadius: 14))
     }
 
-    /// Height added to both ranking cards for the share ring, so the two cards stay level.
-    private static let ringBlock: CGFloat = UsageShareRing.size + 6
-
-    private func ranking(_ title: String, subtitle: String, items: [UsageSummary], kind: ActivityKind) -> some View {
-        let shares = UsageShare.make(items)
-        let showsRing = !model.listedApplications.isEmpty || !model.listedWebsites.isEmpty
-        let extra = showsRing ? Self.ringBlock : 0
-        let named = Set(shares.filter { !$0.isOther }.map(\.key))
-        let highlight = Binding<String?>(get: { shareHighlight[kind] }, set: { shareHighlight[kind] = $0 })
-        let total = items.reduce(0) { $0 + $1.seconds }
-        return ZStack(alignment: .topLeading) {
-            RankingViewport(topInset: items.isEmpty ? 60 : 60 + extra) {
-                if items.isEmpty {
-                    VStack(spacing: 12) {
-                        Image(systemName: kind == .application ? "clock" : "globe").font(.system(size: 25, weight: .light))
-                        Text(kind == .application ? "所选时段还没有记录" : "所选时段还没有网站记录").font(.system(size: 12))
-                        Text(kind == .application ? "让 Monitor 在菜单栏静静运行。" : "连接扩展后，在 Chrome 中浏览网页。")
-                            .font(.system(size: 10))
-                    }.foregroundStyle(Palette.muted).frame(maxWidth: .infinity).frame(height: 220 + extra)
-                } else {
-                    VStack(spacing: 18) {
-                        ForEach(items) { item in
-                            let shareKey = named.contains(item.key) ? item.key : UsageShare.otherKey
-                            let slot = shares.first { $0.key == shareKey }?.slot
-                            let row = rankingRow(item, kind: kind, maximum: items.first?.seconds ?? 1,
-                                                 color: SharePalette.color(slot: slot), fraction: item.seconds / max(total, 1),
-                                                 highlighted: shareHighlight[kind] == shareKey)
-                                .onHover { inside in
-                                    if inside { shareHighlight[kind] = shareKey }
-                                    else if shareHighlight[kind] == shareKey { shareHighlight[kind] = nil }
-                                }
-                            if kind == .application {
-                                Button {
-                                    model.showApplication(ActivityIdentity(key: item.key, name: item.name))
-                                } label: { row }
-                                    .buttonStyle(.plain).accessibilityLabel("查看\(item.name)的使用时间段")
-                            } else {
-                                row
-                            }
-                        }
-                    }.padding(.vertical, 2)
-                }
-            }
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Text(title).font(.system(size: 16, weight: .semibold))
-                    Spacer()
-                    Text(subtitle).font(.system(size: 10)).foregroundStyle(Palette.muted)
-                }
-                if !shares.isEmpty {
-                    HStack(spacing: 18) {
-                        UsageShareRing(shares: shares, kind: kind, highlighted: highlight)
-                        shareHeadline(shares, kind: kind)
-                            .font(.system(size: 12)).foregroundStyle(Palette.muted).lineSpacing(4)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                }
-            }.padding(22)
-        }.frame(maxWidth: .infinity).frame(height: 302 + extra)
-            .background(.white, in: RoundedRectangle(cornerRadius: 14))
-    }
-
-    private func rankingRow(_ item: UsageSummary, kind: ActivityKind, maximum: Double,
-                            color: Color, fraction: Double, highlighted: Bool) -> some View {
-        HStack(spacing: 10) {
-            ActivityIcon(key: item.key, kind: kind).frame(width: 29, height: 29)
-            VStack(alignment: .leading, spacing: 7) {
-                HStack(spacing: 6) {
-                    Circle().fill(color).frame(width: 7, height: 7)
-                    Text(item.name).font(.system(size: 12, weight: .medium)).lineLimit(1).help(item.name)
-                    Spacer(minLength: 4)
-                    Text(durationText(item.seconds)).font(.system(size: 10)).foregroundStyle(Palette.muted).monospacedDigit()
-                    Text(UsageShare.percentText(fraction)).font(.system(size: 10)).foregroundStyle(Palette.muted.opacity(0.8))
-                        .monospacedDigit().frame(width: 30, alignment: .trailing)
-                }
-                GeometryReader { geometry in
-                    Capsule().fill(Palette.background)
-                    Capsule().fill(color.opacity(0.85))
-                        .frame(width: max(3, geometry.size.width * item.seconds / max(maximum, 1)))
-                }.frame(height: 4)
-            }
-            if kind == .application {
-                Image(systemName: "chevron.right").font(.system(size: 9)).foregroundStyle(Palette.muted)
-            }
-        }.padding(.vertical, 4).contentShape(Rectangle())
-            .background(rowBackground(item, kind: kind, highlighted: highlighted), in: RoundedRectangle(cornerRadius: 7))
-    }
-
-    private func rowBackground(_ item: UsageSummary, kind: ActivityKind, highlighted: Bool) -> Color {
-        if kind == .application && model.selectedApplication?.key == item.key { return Palette.green.opacity(0.06) }
-        return highlighted ? Palette.background.opacity(0.8) : .clear
-    }
-
-    private var timelineCard: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack {
-                Text("时间足迹").font(.system(size: 16, weight: .semibold))
-                Spacer()
-                Text("最近 200 条 · 应用与网站分开记录").font(.system(size: 10)).foregroundStyle(Palette.muted)
-            }
-            if model.timeline.isEmpty {
+    private func timelineCard(close: (() -> Void)?) -> some View {
+        let items = close == nil ? model.timeline.prefix(8) : model.timeline[...]
+        return VStack(alignment: .leading, spacing: 16) {
+            OverviewModuleHeader(module: .timeline, subtitle: "最近 \(items.count) 条", close: close)
+            if items.isEmpty {
                 Text("打开一个应用，第一段时间就会出现在这里。")
                     .font(.system(size: 12)).foregroundStyle(Palette.muted).padding(.vertical, 14)
+            } else if close != nil {
+                Text(model.reportLabel).font(.system(size: 11)).foregroundStyle(Palette.muted)
+                ScrollView { timelineRows(items).padding(.trailing, 6) }
             } else {
-                LazyVStack(spacing: 0) {
-                    ForEach(model.timeline) { item in
-                        HStack(spacing: 12) {
-                            Text(timelineLabel(item))
-                                .font(.system(size: 10, design: .monospaced)).foregroundStyle(Palette.muted).frame(width: model.period == .day ? 175 : 202, alignment: .leading)
-                            Circle().fill(item.kind == .application ? Palette.green : Palette.orange).frame(width: 6, height: 6)
-                            Text(item.name).font(.system(size: 12)).lineLimit(1)
-                            Text(item.kind == .website ? "网站" : "应用").font(.system(size: 9)).foregroundStyle(Palette.muted)
-                            Spacer()
-                            Text(durationText(item.seconds)).font(.system(size: 11)).foregroundStyle(Palette.muted)
-                        }.padding(.vertical, 10)
-                        Divider().opacity(0.4)
-                    }
-                }
+                timelineRows(items)
             }
-        }.padding(22).background(.white, in: RoundedRectangle(cornerRadius: 14))
+        }.padding(18).frame(maxWidth: .infinity, alignment: .topLeading)
+    }
+
+    private func timelineRows(_ items: ArraySlice<ActivitySlice>) -> some View {
+        LazyVStack(spacing: 0) {
+            ForEach(items) { item in
+                HStack(spacing: 12) {
+                    Text(timelineLabel(item))
+                        .font(.system(size: 10, design: .monospaced)).foregroundStyle(Palette.muted)
+                        .frame(width: model.period == .day ? 175 : 202, alignment: .leading)
+                    Circle().fill(item.kind == .application ? Palette.green : Palette.orange).frame(width: 6, height: 6)
+                    Text(item.name).font(.system(size: 12)).lineLimit(1)
+                    Text(item.kind == .website ? "网站" : "应用").font(.system(size: 9)).foregroundStyle(Palette.muted)
+                    Spacer()
+                    Text(durationText(item.seconds)).font(.system(size: 11)).foregroundStyle(Palette.muted)
+                }.padding(.vertical, 10)
+                Divider().opacity(0.4)
+            }
+        }
     }
 
     private func timelineLabel(_ item: ActivitySlice) -> String {

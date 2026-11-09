@@ -23,72 +23,124 @@ final class ReportControlsTests: XCTestCase {
     }
 
     @MainActor
-    func testRankingScrollStaysInsideCardAtBothEdges() async throws {
+    func testOverviewLimitsPreviewAndRestoresScrollAfterClosingRanking() async throws {
         try TestEnvironment.requireWindowRendering()
         _ = NSApplication.shared
-        let rows = VStack { ForEach(0..<30) { i in Text("应用 \(i)").frame(height: 32) } }
-        let card = RankingCardSurface(rows: rows)
-        let outer = NSScrollView(frame: NSRect(x: 0, y: 0, width: 440, height: 400))
-        outer.hasVerticalScroller = true
-        let page = NSView(frame: NSRect(x: 0, y: 0, width: 440, height: 1400))
-        outer.documentView = page
-        card.frame = NSRect(x: 0, y: 100, width: 400, height: 302)
-        page.addSubview(card)
-        let window = NSWindow(contentRect: outer.frame, styleMask: [.titled], backing: .buffered, defer: false)
+        let model = MonitorModel(dataDirectory: FileManager.default.temporaryDirectory)
+        let websites = (1...200).map { UsageSummary(key: "site-\($0)", name: "site-\($0)", seconds: Double(205 - $0)) }
+        model.websites = Array(websites.prefix(1))
+        var cardRect = CGRect.zero
+        let root = DashboardView().environmentObject(model)
+            .overlayPreferenceValue(OverviewModuleBounds.self) { bounds in
+                GeometryReader { geometry in
+                    if let anchor = bounds[.ranking(.website)] {
+                        Color.clear.onChange(of: geometry[anchor], initial: true) { _, rect in cardRect = rect }
+                    }
+                }.allowsHitTesting(false)
+            }
+        let host = NSHostingView(rootView: root)
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1024, height: 650),
+                              styleMask: [.titled], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
-        window.contentView = outer
+        window.contentView = host
         window.orderFront(nil)
         defer { window.close() }
-        window.contentView?.layoutSubtreeIfNeeded()
-        let clip = card.scroller.contentView
-        XCTAssertGreaterThan(card.document.frame.height, clip.bounds.height)
-        outer.contentView.scroll(to: NSPoint(x: 0, y: 100))
-        let outerStart = outer.contentView.bounds.origin
-        func wheel(_ delta: Int32, at point: NSPoint = NSPoint(x: 100, y: 100)) throws -> Bool {
-            let cg = try XCTUnwrap(CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 1,
-                                          wheel1: delta, wheel2: 0, wheel3: 0))
-            return card.handleWheel(try XCTUnwrap(NSEvent(cgEvent: cg)), at: point)
-        }
-        XCTAssertTrue(try wheel(-10000))
-        let bottom = clip.bounds.origin.y
-        XCTAssertGreaterThan(bottom, 300)
-        XCTAssertTrue(try wheel(-10000))
-        XCTAssertEqual(clip.bounds.origin.y, bottom)
-        XCTAssertEqual(outer.contentView.bounds.origin, outerStart)
-        XCTAssertTrue(try wheel(10000))
-        XCTAssertEqual(clip.bounds.origin.y, 0, accuracy: 1)
-        XCTAssertTrue(try wheel(10000))
-        XCTAssertEqual(outer.contentView.bounds.origin, outerStart)
-        XCTAssertFalse(try wheel(-40, at: NSPoint(x: -10, y: 100)))
-        func gesture(_ phase: NSEvent.Phase, at point: NSPoint) throws -> Bool {
-            let cg = try XCTUnwrap(CGEvent(scrollWheelEvent2Source: nil, units: .pixel,
-                                          wheelCount: 1, wheel1: -60, wheel2: 0, wheel3: 0))
-            cg.setIntegerValueField(.scrollWheelEventScrollPhase, value: phase == .began ? 1 : (phase == .changed ? 2 : 4))
-            let event = try XCTUnwrap(NSEvent(cgEvent: cg))
-            XCTAssertEqual(event.phase, phase)
-            let consumed = card.handleWheel(event, at: point)
-            return consumed
-        }
-        let inside = NSPoint(x: 100, y: 100)
-        let outside = NSPoint(x: card.bounds.maxX + 20, y: 100)
-        XCTAssertTrue(try gesture(.began, at: inside))
-        let cardBeforeExit = clip.bounds.origin
-        XCTAssertFalse(try gesture(.changed, at: outside))
-        XCTAssertEqual(clip.bounds.origin, cardBeforeExit)
-        let outsideWheel = try XCTUnwrap(CGEvent(scrollWheelEvent2Source: nil, units: .line,
-                                                wheelCount: 1, wheel1: -4, wheel2: 0, wheel3: 0))
-        outer.scrollWheel(with: try XCTUnwrap(NSEvent(cgEvent: outsideWheel)))
-        try await Task.sleep(for: .milliseconds(200))
-        XCTAssertNotEqual(outer.contentView.bounds.origin, outerStart)
-        XCTAssertFalse(try gesture(.ended, at: outside))
 
-        // A new gesture started outside can also move into the card.
-        XCTAssertFalse(try gesture(.began, at: outside))
-        let pageBeforeEntry = outer.contentView.bounds.origin
-        let visiblePoint = NSPoint(x: card.visibleRect.midX, y: card.visibleRect.midY)
-        XCTAssertTrue(try gesture(.changed, at: visiblePoint))
-        XCTAssertEqual(outer.contentView.bounds.origin, pageBeforeEntry)
-        XCTAssertTrue(try gesture(.ended, at: visiblePoint))
-        XCTAssertFalse(card.scroller.hasVerticalScroller)
+        func settle() async throws {
+            try await Task.sleep(for: .milliseconds(150))
+            host.layoutSubtreeIfNeeded()
+        }
+        func click(_ point: CGPoint) throws {
+            let y = host.isFlipped ? point.y : host.bounds.height - point.y
+            let location = host.convert(CGPoint(x: point.x, y: y), to: nil)
+            for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+                let event = try XCTUnwrap(NSEvent.mouseEvent(with: type, location: location, modifierFlags: [],
+                    timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber, context: nil,
+                    eventNumber: 1, clickCount: 1, pressure: 1))
+                window.sendEvent(event)
+            }
+        }
+
+        try await settle()
+        let page = try XCTUnwrap(scrollViews(in: host).first)
+        let document = try XCTUnwrap(page.documentView)
+        var previousHeight = document.frame.height
+        for count in 2...5 {
+            model.websites = Array(websites.prefix(count))
+            try await settle()
+            XCTAssertGreaterThan(document.frame.height, previousHeight)
+            previousHeight = document.frame.height
+        }
+        let fiveRows = document.frame.height
+        model.websites = websites
+        try await settle()
+        XCTAssertEqual(document.frame.height, fiveRows, accuracy: 1)
+        page.contentView.scroll(to: NSPoint(x: 0, y: 110))
+        try await settle()
+        let offset = page.contentView.bounds.origin
+        XCTAssertFalse(cardRect.isEmpty)
+        try click(CGPoint(x: cardRect.midX, y: cardRect.midY))
+        try await Task.sleep(for: .milliseconds(550))
+        let list = try XCTUnwrap(scrollViews(in: host).first { $0 !== page })
+        list.contentView.scroll(to: NSPoint(x: 0, y: 200))
+        XCTAssertGreaterThan(list.contentView.bounds.origin.y, 0)
+        XCTAssertEqual(page.contentView.bounds.origin, offset)
+        func searchField(in view: NSView) -> NSTextField? {
+            if let field = view as? NSTextField, field.placeholderString == "搜索网站域名" { return field }
+            return view.subviews.lazy.compactMap { searchField(in: $0) }.first
+        }
+        let search = try XCTUnwrap(searchField(in: host))
+        XCTAssertTrue(window.makeFirstResponder(search))
+        let editor = try XCTUnwrap(search.currentEditor() as? NSTextView)
+        editor.insertText("SITE-200", replacementRange: editor.selectedRange())
+        try await settle()
+        let filtered = try XCTUnwrap(scrollViews(in: host).first { $0 !== page })
+        XCTAssertLessThanOrEqual(try XCTUnwrap(filtered.documentView).frame.height, filtered.bounds.height + 1)
+        try click(CGPoint(x: 30, y: host.bounds.midY))
+        for _ in 0..<20 where scrollViews(in: host).count != 1 {
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        XCTAssertEqual(scrollViews(in: host).count, 1)
+        XCTAssertEqual(page.contentView.bounds.origin, offset)
+        XCTAssertEqual(document.frame.height, fiveRows, accuracy: 1)
+    }
+
+    private func scrollViews(in view: NSView) -> [NSScrollView] {
+        ((view as? NSScrollView).map { [$0] } ?? [])
+            + view.subviews.flatMap { scrollViews(in: $0) }
+    }
+
+    @MainActor
+    func testWheelOverRankingScrollsThePage() async throws {
+        try TestEnvironment.requireWindowRendering()
+        _ = NSApplication.shared
+        let items = (1...20).map {
+            UsageSummary(key: "site-\($0)", name: "site-\($0)", seconds: Double(21 - $0))
+        }
+        let root = ScrollView {
+            RankingCard(kind: .website, items: items)
+            Color.clear.frame(height: 800)
+        }
+        let host = NSHostingView(rootView: root)
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 440, height: 400),
+                              styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        window.orderFront(nil)
+        defer { window.close() }
+        try await Task.sleep(for: .milliseconds(150))
+        host.layoutSubtreeIfNeeded()
+
+        let scrollers = scrollViews(in: host)
+        XCTAssertEqual(scrollers.count, 1)
+        let page = try XCTUnwrap(scrollers.first)
+        let start = page.contentView.bounds.origin
+        let point = CGPoint(x: host.bounds.midX, y: host.bounds.midY)
+        let hit = try XCTUnwrap(host.hitTest(point))
+        let wheel = try XCTUnwrap(CGEvent(scrollWheelEvent2Source: nil, units: .line, wheelCount: 1,
+                                          wheel1: -4, wheel2: 0, wheel3: 0))
+        hit.scrollWheel(with: try XCTUnwrap(NSEvent(cgEvent: wheel)))
+        try await Task.sleep(for: .milliseconds(200))
+        XCTAssertNotEqual(page.contentView.bounds.origin, start)
     }
 }
